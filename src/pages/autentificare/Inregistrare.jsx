@@ -1,11 +1,16 @@
-import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
-import PasswordInput from "../../components/PasswordInput";
+// src/pages/autentificare/Inregistrare.jsx
+import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import PasswordInput from "@/components/PasswordInput";
+import { useAuthContext } from "@/context/SupabaseAuthProvider.jsx";
 
 export default function Inregistrare() {
   const navigate = useNavigate();
+  const { signUpWithPassword } = useAuthContext();
+
   const [role, setRole] = useState("");
-  const [formData, setFormData] = useState({
+  const [msg, setMsg] = useState({ ok: "", err: "" });
+  const [form, setForm] = useState({
     prenume: "",
     nume: "",
     birthdate: "",
@@ -22,49 +27,83 @@ export default function Inregistrare() {
     tipProfesor: "",
   });
 
-  useEffect(() => {
-    import("./Login.jsx");
-    import("../elev/DashboardElev.jsx");
-    import("../profesor/DashboardProfesor.jsx");
-    import("../parinte/DashboardParinte.jsx");
-    import("../admin/DashboardAdmin.jsx");
-  }, []);
-
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
-  };
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (!formData.username || formData.parola !== formData.confirmParola) {
-      alert("Date invalide sau parolele nu coincid.");
-      return;
-    }
-    const userData = { ...formData, username: formData.username.toLowerCase(), rol: role };
-    localStorage.setItem("utilizator_" + userData.username, JSON.stringify(userData));
-    alert("Cont creat cu succes! Vei fi redirecționat către login.");
-    setTimeout(() => navigate("/autentificare/login"), 1200);
-  };
-
   const isElev = role === "elev";
   const isParinte = role === "parinte";
   const isProfesor = role === "profesor";
 
+  const setF = (k, v) => setForm((p) => ({ ...p, [k]: v }));
+  const onChange = (e) => setF(e.target.name, e.target.value);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setMsg({ ok: "", err: "" });
+
+    if (!role) return setMsg({ ok: "", err: "Selectează un rol." });
+    if (!form.username)
+      return setMsg({ ok: "", err: "Completează username-ul." });
+    if (form.parola !== form.confirmParola)
+      return setMsg({ ok: "", err: "Parolele nu coincid." });
+
+    try {
+      const { error } = await signUpWithPassword({
+        email: form.email.trim(),
+        password: form.parola,
+        metadata: {
+          role,
+          prenume: form.prenume,
+          nume: form.nume,
+          birthdate: form.birthdate,
+          username: form.username.toLowerCase(),
+          telefon: isParinte || isProfesor ? form.telefon : null,
+          judet: form.judet,
+          oras: form.oras,
+          scoala: form.scoala,
+          clasa: isElev ? form.clasa : null,
+          litera: isElev ? form.litera : null,
+          tipProfesor: isProfesor ? form.tipProfesor : null,
+        },
+      });
+      if (error)
+        return setMsg({
+          ok: "",
+          err: error.message || "Eroare la creare cont.",
+        });
+
+      setMsg({
+        ok: "Cont creat! Verifică emailul pentru confirmare.",
+        err: "",
+      });
+      setTimeout(() => navigate("/autentificare/login"), 1000);
+    } catch (e2) {
+      setMsg({ ok: "", err: e2?.message || "A apărut o eroare." });
+    }
+  };
+
   return (
     <main className="min-h-screen flex items-center justify-center px-4 py-12">
-      <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-xl border border-gray-200">
-        <div className="text-center mb-8">
+      <div className="bg-white rounded-2xl shadow p-8 w-full max-w-xl border border-gray-200">
+        <div className="text-center mb-6">
           <h1 className="text-3xl font-bold text-gray-800">Înregistrare</h1>
-          <p className="text-base text-gray-600">
+          <p className="text-gray-600">
             Creează un cont nou pe <strong>ComperEduTest</strong>.
           </p>
         </div>
 
-        <form className="space-y-4" onSubmit={handleSubmit}>
+        {msg.err && (
+          <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-red-700 text-sm">
+            {msg.err}
+          </div>
+        )}
+        {msg.ok && (
+          <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-green-700 text-sm">
+            {msg.ok}
+          </div>
+        )}
+
+        <form className="space-y-4" onSubmit={submit}>
           {/* Rol */}
           <select
-            className="border border-gray-300 rounded-md p-2 w-full"
+            className="border rounded-md p-2 w-full"
             value={role}
             onChange={(e) => setRole(e.target.value)}
             required
@@ -78,79 +117,156 @@ export default function Inregistrare() {
 
           {/* Prenume + Nume */}
           <div className="grid grid-cols-2 gap-4">
-            <input className="border border-gray-300 rounded-md p-2 w-full" name="prenume" placeholder="👤 Prenume" required onChange={handleChange} />
-            <input className="border border-gray-300 rounded-md p-2 w-full" name="nume" placeholder="👤 Nume" required onChange={handleChange} />
+            <input
+              className="border rounded-md p-2 w-full"
+              name="prenume"
+              placeholder="👤 Prenume"
+              required
+              onChange={onChange}
+            />
+            <input
+              className="border rounded-md p-2 w-full"
+              name="nume"
+              placeholder="👤 Nume"
+              required
+              onChange={onChange}
+            />
           </div>
 
           {/* Data nașterii */}
-          <input className="border border-gray-300 rounded-md p-2 w-full" name="birthdate" type="date" required onChange={handleChange} />
+          <input
+            className="border rounded-md p-2 w-full"
+            name="birthdate"
+            type="date"
+            required
+            onChange={onChange}
+          />
 
           {/* Username + Email */}
-          <input className="border border-gray-300 rounded-md p-2 w-full" name="username" placeholder="👤 Username" required onChange={handleChange} />
-          <input className="border border-gray-300 rounded-md p-2 w-full" name="email" type="email" placeholder="✉️ Email" required onChange={handleChange} />
+          <input
+            className="border rounded-md p-2 w-full"
+            name="username"
+            placeholder="👤 Username"
+            required
+            onChange={onChange}
+          />
+          <input
+            className="border rounded-md p-2 w-full"
+            name="email"
+            type="email"
+            placeholder="✉️ Email"
+            required
+            onChange={onChange}
+          />
 
-          {/* Parolă */}
+          {/* Parolă + Confirmare */}
           <PasswordInput
             label="Parolă"
-            value={formData.parola}
-            onChange={(e) => setFormData({ ...formData, parola: e.target.value })}
+            value={form.parola}
+            onChange={(e) => setF("parola", e.target.value)}
             showStrength
           />
-
-          {/* Confirmare parolă */}
           <PasswordInput
             label="Confirmă parola"
-            value={formData.confirmParola}
-            onChange={(e) => setFormData({ ...formData, confirmParola: e.target.value })}
+            value={form.confirmParola}
+            onChange={(e) => setF("confirmParola", e.target.value)}
           />
 
-          {/* Telefon pentru părinte/profesor */}
+          {/* Telefon (părinte/profesor) */}
           {(isParinte || isProfesor) && (
-            <input className="border border-gray-300 rounded-md p-2 w-full" name="telefon" placeholder="📞 Telefon" onChange={handleChange} />
+            <input
+              className="border rounded-md p-2 w-full"
+              name="telefon"
+              placeholder="📞 Telefon"
+              onChange={onChange}
+            />
           )}
 
-          {/* Date școală comune */}
+          {/* Date școală (comune) */}
           {(isElev || isParinte || isProfesor) && (
             <>
-              <select className="border border-gray-300 rounded-md p-2 w-full" name="judet" required onChange={handleChange}>
+              <select
+                className="border rounded-md p-2 w-full"
+                name="judet"
+                required
+                onChange={onChange}
+              >
                 <option value="">Selectează județul</option>
                 <option>București</option>
                 <option>Cluj</option>
                 <option>Iași</option>
                 <option>Timiș</option>
               </select>
-              <select className="border border-gray-300 rounded-md p-2 w-full" name="oras" required onChange={handleChange}>
+              <select
+                className="border rounded-md p-2 w-full"
+                name="oras"
+                required
+                onChange={onChange}
+              >
                 <option value="">Selectează localitatea</option>
                 <option>București</option>
                 <option>Cluj-Napoca</option>
                 <option>Iași</option>
                 <option>Timișoara</option>
               </select>
-              <select className="border border-gray-300 rounded-md p-2 w-full" name="scoala" required onChange={handleChange}>
+              <select
+                className="border rounded-md p-2 w-full"
+                name="scoala"
+                required
+                onChange={onChange}
+              >
                 <option value="">Selectează școala</option>
                 <option>Școala Gimnazială Nr. 1</option>
                 <option>Colegiul Național</option>
                 <option>Liceul Teoretic</option>
               </select>
-              <a className="text-sm text-blue-600 hover:underline block text-right" href="/autentificare/formular-scoala">
+              <Link
+                className="text-sm text-blue-600 hover:underline block text-right"
+                to="/autentificare/formular-scoala"
+              >
                 ❓ Nu găsești școala? Trimite-ne mesaj!
-              </a>
+              </Link>
             </>
           )}
 
-          {/* Clasa + Litera pentru elev */}
+          {/* Clasă + Literă (elev) */}
           {isElev && (
             <div className="grid grid-cols-2 gap-4">
-              <select className="border border-gray-300 rounded-md p-2 w-full" name="clasa" onChange={handleChange}>
+              <select
+                className="border rounded-md p-2 w-full"
+                name="clasa"
+                onChange={onChange}
+              >
                 <option value="">Clasa</option>
-                {["I","II","III","IV","V","VI","VII","VIII","IX","X","XI","XII"].map((c, i) => (
-                  <option key={i} value={c}>{c}</option>
+                {[
+                  "I",
+                  "II",
+                  "III",
+                  "IV",
+                  "V",
+                  "VI",
+                  "VII",
+                  "VIII",
+                  "IX",
+                  "X",
+                  "XI",
+                  "XII",
+                ].map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
                 ))}
               </select>
-              <select className="border border-gray-300 rounded-md p-2 w-full" name="litera" onChange={handleChange}>
+              <select
+                className="border rounded-md p-2 w-full"
+                name="litera"
+                onChange={onChange}
+              >
                 <option value="">Litera</option>
                 {"ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("").map((l) => (
-                  <option key={l} value={l}>{l}</option>
+                  <option key={l} value={l}>
+                    {l}
+                  </option>
                 ))}
               </select>
             </div>
@@ -158,23 +274,33 @@ export default function Inregistrare() {
 
           {/* Tip profesor */}
           {isProfesor && (
-            <select className="border border-gray-300 rounded-md p-2 w-full" name="tipProfesor" onChange={handleChange}>
+            <select
+              className="border rounded-md p-2 w-full"
+              name="tipProfesor"
+              onChange={onChange}
+            >
               <option value="">Selectează tipul</option>
-              <option value="primar">Primar I-IV</option>
-              <option value="gimnazial">Gimnazial V-VIII</option>
-              <option value="liceal">Liceal IX-XII</option>
+              <option value="primar">Primar I–IV</option>
+              <option value="gimnazial">Gimnazial V–VIII</option>
+              <option value="liceal">Liceal IX–XII</option>
             </select>
           )}
 
-          <button className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl shadow-sm w-full" type="submit">
+          <button
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl w-full"
+            type="submit"
+          >
             ✔️ Creează cont
           </button>
         </form>
 
         <div className="text-center mt-6">
-          <a className="text-blue-600 hover:underline" href="/autentificare/login">
+          <Link
+            className="text-blue-600 hover:underline"
+            to="/autentificare/login"
+          >
             🔐 Înapoi la autentificare
-          </a>
+          </Link>
         </div>
       </div>
     </main>

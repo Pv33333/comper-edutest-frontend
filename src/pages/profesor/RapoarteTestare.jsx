@@ -1,46 +1,34 @@
+// src/pages/profesor/RapoarteTestare.jsx
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import ResultsAPI from "@/services/resultsService.js";
 
 const RapoarteTestare = () => {
   const [rapoarte, setRapoarte] = useState([]);
+  const [err, setErr] = useState("");
   const navigate = useNavigate();
 
+  const { listAllResultsForTeacher } = ResultsAPI;
+
   useEffect(() => {
-  const existaDate = Object.keys(localStorage).some(k => k.startsWith("rezultat_test_"));
-  const isDev = import.meta.env.MODE === "development";
-
-  if (!existaDate && isDev) {
-    const demo = {
-      testID: "test123",
-      elevID: "elev_demo",
-      data: new Date().toLocaleDateString("ro-RO"),
-      raspunsuri: [
-        { intrebare: "Care este capitala Franței?", elev: "Paris", corect: "Paris" },
-        { intrebare: "2 + 2 = ?", elev: "4", corect: "4" },
-        { intrebare: "Ce culoare are cerul?", elev: "Verde", corect: "Albastru" }
-      ]
-    };
-    localStorage.setItem("rezultat_test_test123_elev_demo", JSON.stringify(demo));
-  }
-
-    const rezultate = Object.keys(localStorage)
-      .filter((k) => k.startsWith("rezultat_test_"))
-      .map((k) => ({ key: k, ...JSON.parse(localStorage.getItem(k)) }));
-
-    setRapoarte(rezultate);
+    let cancelled = false;
+    (async () => {
+      try {
+        const rows = await listAllResultsForTeacher();
+        if (!cancelled) setRapoarte(rows);
+      } catch (e) {
+        console.error(e);
+        if (!cancelled) setErr(e?.message || "Eroare la încărcarea rapoartelor.");
+      }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
-  const veziRaport = (testID, elevID) => {
+  const veziRaport = (resultID, testID, elevID) => {
+    sessionStorage.setItem("raport_selectat_resultID", resultID);
     sessionStorage.setItem("raport_selectat_testID", testID);
     sessionStorage.setItem("raport_selectat_elevID", elevID);
     navigate("/profesor/raport-detaliat");
-  };
-
-  const stergeRaport = (key) => {
-    if (window.confirm("Sigur vrei să ștergi acest raport?")) {
-      localStorage.removeItem(key);
-      setRapoarte((prev) => prev.filter((r) => r.key !== key));
-    }
   };
 
   return (
@@ -61,40 +49,52 @@ const RapoarteTestare = () => {
         <div className="max-w-6xl mx-auto space-y-8">
           <h1 className="text-4xl font-bold text-center text-blue-900">📊 Rapoarte Testare</h1>
 
+          {err && (
+            <div className="max-w-3xl mx-auto p-4 rounded-lg border border-yellow-300 bg-yellow-50 text-yellow-800">
+              {err}
+            </div>
+          )}
+
           <div className="overflow-x-auto shadow rounded-xl bg-white border border-blue-200">
             <table className="min-w-full table-auto text-sm text-left border-collapse">
               <thead className="bg-blue-100 text-blue-800">
                 <tr>
                   <th className="px-4 py-3">#</th>
                   <th className="px-4 py-3">Elev</th>
+                  <th className="px-4 py-3">Email</th>
                   <th className="px-4 py-3">Test</th>
+                  <th className="px-4 py-3">Materie</th>
+                  <th className="px-4 py-3">Clasă</th>
                   <th className="px-4 py-3">Data</th>
                   <th className="px-4 py-3">Scor</th>
                   <th className="px-4 py-3">Feedback</th>
-                  <th className="px-4 py-3 text-center">Acțiuni</th>
+                  <th className="px-4 py-3 text-center">Detalii</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {rapoarte.length === 0 ? (
                   <tr>
-                    <td colSpan="7" className="p-4 text-center text-gray-500">Niciun raport disponibil.</td>
+                    <td colSpan="10" className="p-4 text-center text-gray-500">Niciun raport disponibil.</td>
                   </tr>
                 ) : (
                   rapoarte.map((r, i) => {
-                    const scor = r.raspunsuri.filter(q => q.elev === q.corect).length;
-                    const total = r.raspunsuri.length;
-                    const procent = Math.round((scor / total) * 100);
+                    const raspunsuri = r.raspunsuri || [];
+                    const scor = raspunsuri.filter(q => q.elev === q.corect).length;
+                    const total = raspunsuri.length;
+                    const procent = total ? Math.round((scor / total) * 100) : 0;
                     return (
                       <tr key={r.key} className="hover:bg-blue-50 transition">
                         <td className="px-4 py-3">{i + 1}</td>
-                        <td className="px-4 py-3 font-medium text-blue-900">{r.elevID}</td>
-                        <td className="px-4 py-3">{r.testID}</td>
+                        <td className="px-4 py-3 font-medium text-blue-900">{r.elevNume || r.elevID}</td>
+                        <td className="px-4 py-3">{r.elevEmail || "—"}</td>
+                        <td className="px-4 py-3">{r.testTitle || r.testID}</td>
+                        <td className="px-4 py-3">{r.subject || "-"}</td>
+                        <td className="px-4 py-3">{r.grade_level || "-"}</td>
                         <td className="px-4 py-3">{r.data}</td>
                         <td className="px-4 py-3">{scor}/{total} ({procent}%)</td>
                         <td className="px-4 py-3">{procent >= 80 ? "🎉 Excelent" : procent >= 60 ? "👍 Bine" : "⚠️ Necesită îmbunătățire"}</td>
-                        <td className="px-4 py-3 flex flex-col gap-1 text-sm text-center items-center justify-center">
-                          <button onClick={() => veziRaport(r.testID, r.elevID)} className="text-blue-600 hover:underline">Detalii</button>
-                          <button onClick={() => stergeRaport(r.key)} className="text-red-600 hover:underline">Șterge</button>
+                        <td className="px-4 py-3 text-center">
+                          <button onClick={() => veziRaport(r.key, r.testID, r.elevID)} className="text-blue-600 hover:underline">Vezi</button>
                         </td>
                       </tr>
                     );

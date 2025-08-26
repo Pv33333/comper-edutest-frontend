@@ -1,191 +1,328 @@
-
+// src/pages/profesor/EleviGestionare.jsx
 import React, { useEffect, useState } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, Link } from "react-router-dom";
+import { useAuth } from "@/context/SupabaseAuthProvider.jsx";
 
-const EleviGestionare = () => {
-  const location = useLocation();
-  const [date, setDate] = useState({});
-  const [scoala, setScoala] = useState("");
-  const [clasaNoua, setClasaNoua] = useState("");
-  const [numeElev, setNumeElev] = useState("");
-  const [emailElev, setEmailElev] = useState("");
-  const [clasaSelectata, setClasaSelectata] = useState("");
+import {
+  createClass,
+  listMyClasses,
+  deleteClass,
+} from "@/services/classesService.js";
+import {
+  addStudentByEmail,
+  listStudentsForClass,
+  removeStudentFromClass,
+} from "@/services/enrollmentsService.js";
+import {
+  scheduleTestForClass,
+  scheduleTestForStudent,
+} from "@/services/assignmentsService.js";
+import { getTestById } from "@/services/testsService.js";
+
+export default function EleviGestionare() {
+  const { user } = useAuth();
+  const { search } = useLocation();
+
   const [testId, setTestId] = useState(null);
   const [testSelectat, setTestSelectat] = useState(null);
-  const [testeTrimise, setTesteTrimise] = useState([]);
+
+  const [classes, setClasses] = useState([]);
+  const [studentsByClass, setStudentsByClass] = useState({});
+
+  // câmpuri creare clasă
+  const [clasaNoua, setClasaNoua] = useState(""); // ex: VII
+  const [literaNoua, setLiteraNoua] = useState(""); // ex: A
+
+  // adăugare elev în clasa selectată
+  const [emailElev, setEmailElev] = useState("");
+  const [clasaSelectata, setClasaSelectata] = useState("");
+
+  // dacă vii cu ?testId= în URL, afișăm butoanele de trimitere test
+  useEffect(() => {
+    const id = new URLSearchParams(search).get("testId");
+    setTestId(id || null);
+    if (!id) return;
+    getTestById(id)
+      .then(setTestSelectat)
+      .catch(() => {});
+  }, [search]);
+
+  const reload = async () => {
+    const cls = await listMyClasses();
+    setClasses(cls);
+    const map = {};
+    for (const c of cls) map[c.id] = await listStudentsForClass(c.id);
+    setStudentsByClass(map);
+  };
 
   useEffect(() => {
-    const params = new URLSearchParams(location.search);
-    const id = params.get("testId");
-    setTestId(id);
-    
-    let scoalaActiva = localStorage.getItem("scoala_selectata");
-    let structura = JSON.parse(localStorage.getItem("scoli_structura") || "{}");
+    if (user) reload().catch(() => {});
+  }, [user]);
 
-    if (!scoalaActiva) {
-      scoalaActiva = "Școala implicită";
-      localStorage.setItem("scoala_selectata", scoalaActiva);
+  // ────────────────────────────── Actions ──────────────────────────────
+  const onAddClass = async () => {
+    const grade_level = String(clasaNoua).toUpperCase().trim();
+    const letter =
+      (literaNoua ? String(literaNoua).toUpperCase().trim() : "") || null;
+
+    const allowed = ["0", "I", "II", "III", "IV", "V", "VI", "VII", "VIII"];
+    if (!allowed.includes(grade_level)) {
+      return alert(
+        "Clasa trebuie să fie una dintre: 0, I, II, III, IV, V, VI, VII, VIII."
+      );
+    }
+    if (letter && !/^[A-Z]$/.test(letter)) {
+      return alert("Litera trebuie să fie o singură literă A–Z.");
     }
 
-    if (!structura[scoalaActiva]) {
-      structura[scoalaActiva] = {};
-      localStorage.setItem("scoli_structura", JSON.stringify(structura));
-    }
-
-    const scoalaActivaFinal = scoalaActiva;
-    setScoala(scoalaActivaFinal);
-    setDate(structura);
-    
-    setDate(structura);
-    setScoala(scoalaActiva);
-    if (id) {
-      const toate = JSON.parse(localStorage.getItem("teste_profesor") || "[]");
-      const gasit = toate.find(t => t.id === id);
-      setTestSelectat(gasit);
-      const dejaTrimise = JSON.parse(localStorage.getItem("teste_elev") || "[]");
-      setTesteTrimise(dejaTrimise);
-    }
-  }, [location]);
-
-  const salveaza = (actualizat) => {
-    localStorage.setItem("scoli_structura", JSON.stringify(actualizat));
-    localStorage.setItem("scoala_selectata", scoala);
-    setDate({ ...actualizat });
-  };
-
-  const adaugaClasa = () => {
-    if (!clasaNoua || !scoala) return;
-    const actualizat = { ...date };
-    if (!actualizat[scoala]) actualizat[scoala] = {};
-    if (!actualizat[scoala][clasaNoua]) {
-      actualizat[scoala][clasaNoua] = [];
+    try {
+      await createClass({ grade_level, letter });
       setClasaNoua("");
-      salveaza(actualizat);
+      setLiteraNoua("");
+      await reload();
+      alert("✅ Clasa a fost creată.");
+    } catch (e) {
+      console.error(e);
+      alert(e?.message || "⚠️ Eroare la crearea clasei.");
     }
   };
 
-  const adaugaElev = () => {
-    if (!numeElev || !emailElev || !clasaSelectata) return;
-    const actualizat = { ...date };
-    actualizat[scoala][clasaSelectata].push({ nume: numeElev, email: emailElev });
-    setNumeElev("");
-    setEmailElev("");
-    salveaza(actualizat);
+  const onAddStudent = async () => {
+    if (!clasaSelectata) return alert("Selectează o clasă.");
+    if (!emailElev.trim()) return alert("Introdu emailul elevului.");
+    try {
+      await addStudentByEmail({
+        class_id: clasaSelectata,
+        email: emailElev.trim(),
+      });
+      setEmailElev("");
+      // ✅ reîncarcă DOAR clasa selectată
+      const data = await listStudentsForClass(clasaSelectata);
+      setStudentsByClass((prev) => ({ ...prev, [clasaSelectata]: data }));
+      alert("✅ Elev adăugat în clasă.");
+    } catch (e) {
+      console.error(e);
+      alert(
+        e?.message ||
+          "⚠️ Eroare la adăugarea elevului. Asigură-te că elevul are cont."
+      );
+    }
   };
 
-  const stergeElev = (clasa, index) => {
-    const actualizat = { ...date };
-    actualizat[scoala][clasa].splice(index, 1);
-    salveaza(actualizat);
-  };
-
-  const stergeClasa = (clasa) => {
-    if (!confirm(`Ștergi clasa '${clasa}' și toți elevii?`)) return;
-    const actualizat = { ...date };
-    delete actualizat[scoala][clasa];
-    salveaza(actualizat);
-  };
-
-  const aFostTrimis = (testId, elev, clasa) =>
-    testeTrimise.some(t => t.id == testId && t.trimis_catre == elev.email && t.clasa == clasa);
-
-  const trimiteTestLaElev = (clasa, elev) => {
-    if (aFostTrimis(testId, elev, clasa)) {
-      alert(`⚠️ Testul a fost deja trimis către ${elev.nume}.`);
+  const onRemoveStudent = async (classId, studentId, nume) => {
+    if (
+      !confirm(`Ștergi înscrierea lui ${nume || "elevul"} din această clasă?`)
+    )
       return;
+    try {
+      await removeStudentFromClass({
+        class_id: classId,
+        student_id: studentId,
+      });
+      // ✅ reîncarcă DOAR clasa din care ai șters
+      const data = await listStudentsForClass(classId);
+      setStudentsByClass((prev) => ({ ...prev, [classId]: data }));
+      alert("✅ Elevul a fost scos din clasă.");
+    } catch (e) {
+      console.error(e);
+      alert(e?.message || "⚠️ Eroare la ștergerea elevului din clasă.");
     }
-    const test = { ...testSelectat, trimis_catre: elev.email, clasa };
-    const toate = JSON.parse(localStorage.getItem("teste_elev") || "[]");
-    toate.push(test);
-    localStorage.setItem("teste_elev", JSON.stringify(toate));
-    setTesteTrimise([...testeTrimise, test]);
-    alert(`✅ Testul a fost trimis către ${elev.nume}`);
   };
 
-  const trimiteTestLaClasa = (clasa) => {
-    const elevi = date[scoala][clasa];
-    const noi = elevi.filter(elev => !aFostTrimis(testId, elev, clasa))
-      .map(elev => ({ ...testSelectat, trimis_catre: elev.email, clasa }));
-    const toate = JSON.parse(localStorage.getItem("teste_elev") || "[]");
-    localStorage.setItem("teste_elev", JSON.stringify([...toate, ...noi]));
-    setTesteTrimise([...testeTrimise, ...noi]);
-    alert(`✅ Testul a fost trimis clasei ${clasa}`);
+  const onDeleteClass = async (classId) => {
+    const c = classes.find((x) => x.id === classId);
+    const nume = c
+      ? `Clasa ${c.grade_level}${c.letter ? " " + c.letter : ""}`
+      : "clasa";
+    if (!confirm(`Sigur ștergi ${nume}? Se vor șterge și înscrierile.`)) return;
+    try {
+      await deleteClass(classId);
+      await reload();
+      alert("✅ Clasa a fost ștearsă.");
+    } catch (e) {
+      console.error(e);
+      alert(e?.message || "⚠️ Eroare la ștergerea clasei.");
+    }
   };
 
+  const sendToClass = async (class_id) => {
+    if (!testId) return alert("Selectează un test (parametrul ?testId=).");
+    try {
+      await scheduleTestForClass(
+        testId,
+        class_id,
+        new Date().toISOString(),
+        null
+      );
+      alert("✅ Testul a fost trimis clasei.");
+    } catch (e) {
+      console.error(e);
+      alert(e?.message || "⚠️ Eroare la trimiterea către clasă.");
+    }
+  };
+
+  const sendToStudent = async (student_id, nume) => {
+    if (!testId) return alert("Selectează un test (parametrul ?testId=).");
+    try {
+      await scheduleTestForStudent(
+        testId,
+        student_id,
+        new Date().toISOString(),
+        null
+      );
+      alert(`✅ Testul a fost trimis către ${nume || "elev"}.`);
+    } catch (e) {
+      console.error(e);
+      alert(e?.message || "⚠️ Eroare la trimiterea către elev.");
+    }
+  };
+
+  // ────────────────────────────── UI ──────────────────────────────
   return (
-    <div className="-50 text-gray-800 min-h-screen">
-      <section className="max-w-5xl mx-auto mt-10 mb-6 px-4">
-        <a href="/profesor/dashboard" className="flex items-center justify-center gap-2 text-base sm:text-lg text-blue-700 hover:text-blue-900 transition font-medium">
-          <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-            <path d="M15 19l-7-7 7-7" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          Înapoi la Dashboard
-        </a>
-      </section>
+    <div className="bg-gray-50 text-gray-800 min-h-screen">
+      <div className="max-w-5xl mx-auto mt-8 px-4">
+        <Link
+          to="/profesor/dashboard"
+          className="text-blue-700 hover:underline"
+        >
+          ← Înapoi la Dashboard
+        </Link>
+        <h1 className="text-3xl font-bold mt-4">📚 Gestionare Elevi</h1>
 
-      <div className="max-w-5xl mx-auto py-10 px-6 space-y-8">
-        <h1 className="text-4xl font-bold text-center text-blue-900">📚 Gestionare Elevi</h1>
-        <div className="text-center text-lg text-gray-700">
-          {scoala ? `Școala activă: ${scoala}` : "⚠️ Nicio școală activă"}
-        </div>
+        {/* Card: Adaugă Clasă & Elev */}
+        <div className="bg-white rounded-2xl shadow p-6 mt-6 grid gap-6 md:grid-cols-2">
+          {/* Adaugă Clasă */}
+          <div>
+            <label className="block text-sm mb-1">Clasă (0, I–VIII)</label>
+            <div className="flex gap-2">
+              <input
+                className="flex-1 border rounded-xl px-3 py-2"
+                placeholder="ex: VII"
+                value={clasaNoua}
+                onChange={(e) =>
+                  setClasaNoua(e.target.value.toUpperCase().trim())
+                }
+              />
+              <input
+                className="w-24 border rounded-xl px-3 py-2"
+                placeholder="Lit."
+                maxLength={1}
+                value={literaNoua}
+                onChange={(e) =>
+                  setLiteraNoua(e.target.value.toUpperCase().trim())
+                }
+              />
+            </div>
+            <button
+              className="mt-2 w-full bg-blue-600 text-white rounded-xl py-2"
+              onClick={onAddClass}
+            >
+              ➕ Adaugă Clasă
+            </button>
+          </div>
 
-        {/* FORMULAR */}
-        <div className="bg-white rounded-2xl shadow-md p-6 space-y-6">
-          <h2 className="text-xl font-semibold text-gray-800">Adaugă Clasă și Elev</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <label className="block text-sm font-medium mb-1 text-gray-700">Denumire clasă</label>
-              <input value={clasaNoua} onChange={(e) => setClasaNoua(e.target.value)} className="w-full border border-gray-300 rounded-xl px-4 py-2 text-sm shadow-sm" placeholder="Ex: VII A" />
-              <button className="mt-2 w-full bg-blue-500 hover:bg-blue-700 text-white text-sm py-2 rounded-xl shadow-sm" onClick={adaugaClasa}>➕ Adaugă Clasă</button>
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1 text-gray-700">Nume elev</label>
-              <input value={numeElev} onChange={(e) => setNumeElev(e.target.value)} className="w-full border border-gray-300 rounded-xl px-4 py-2 text-sm shadow-sm" placeholder="Ex: Ana Popescu" />
-              <label className="block text-sm font-medium mt-3 mb-1 text-gray-700">Email elev</label>
-              <input value={emailElev} onChange={(e) => setEmailElev(e.target.value)} className="w-full border border-gray-300 rounded-xl px-4 py-2 text-sm shadow-sm" placeholder="Ex: ana@email.com" />
-              <label className="block text-sm font-medium mt-3 mb-1 text-gray-700">Selectează clasa</label>
-              <select value={clasaSelectata} onChange={(e) => setClasaSelectata(e.target.value)} className="w-full border border-gray-300 rounded-xl px-4 py-2 text-sm shadow-sm">
-                <option value="">Alege clasa</option>
-                {scoala && date[scoala] && Object.keys(date[scoala]).map((clasa, i) => (
-                  <option key={i} value={clasa}>{clasa}</option>
-                ))}
-              </select>
-              <button className="mt-2 w-full bg-blue-500 hover:bg-blue-700 text-white text-sm py-2 rounded-xl shadow-sm" onClick={adaugaElev}>👤 Adaugă Elev</button>
-            </div>
+          {/* Adaugă Elev */}
+          <div>
+            <label className="block text-sm mb-1">Email elev</label>
+            <input
+              className="w-full border rounded-xl px-3 py-2"
+              placeholder="elev@exemplu.com"
+              value={emailElev}
+              onChange={(e) => setEmailElev(e.target.value)}
+            />
+            <label className="block text-sm mt-3 mb-1">Selectează clasa</label>
+            <select
+              className="w-full border rounded-xl px-3 py-2"
+              value={clasaSelectata}
+              onChange={(e) => setClasaSelectata(e.target.value)}
+            >
+              <option value="">Alege clasa</option>
+              {classes.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.grade_level}
+                  {c.letter ? ` ${c.letter}` : ""}
+                </option>
+              ))}
+            </select>
+            <button
+              className="mt-2 w-full bg-blue-600 text-white rounded-xl py-2"
+              onClick={onAddStudent}
+            >
+              👤 Adaugă Elev
+            </button>
           </div>
         </div>
 
-        {/* STRUCTURĂ */}
-        {scoala && date[scoala] && Object.keys(date[scoala]).map((clasa, i) => (
-          <div key={i} className="bg-white border rounded-xl shadow p-4 space-y-2">
-            <div className="flex justify-between items-center">
-              <h3 className="text-lg font-semibold text-blue-800">🏫 Clasa {clasa} ({date[scoala][clasa].length} elevi)</h3>
-              <div className="flex gap-2">
-                <button onClick={() => stergeClasa(clasa)} className="text-red-500 hover:text-red-700 font-bold text-sm">✖</button>
-                {testId && <button onClick={() => trimiteTestLaClasa(clasa)} className="bg-green-500 hover:bg-green-600 text-white text-xs px-3 py-1 rounded">📤 Trimite tuturor</button>}
+        {/* Liste clase + elevi */}
+        <div className="mt-8 space-y-4">
+          {classes.map((c) => (
+            <div key={c.id} className="bg-white rounded-xl shadow p-4">
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold text-blue-800">
+                  🏫 Clasa {c.grade_level}
+                  {c.letter ? ` ${c.letter}` : ""} (
+                  {(studentsByClass[c.id] || []).length} elevi)
+                </h3>
+                <div className="flex gap-2">
+                  <button
+                    className="text-red-600"
+                    onClick={() => onDeleteClass(c.id)}
+                  >
+                    ✖
+                  </button>
+                  {testId && (
+                    <button
+                      className="bg-green-600 text-white rounded px-3 py-1"
+                      onClick={() => sendToClass(c.id)}
+                    >
+                      📤 Trimite tuturor
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
-            <ul className="list-disc ml-6 space-y-1">
-              {date[scoala][clasa].map((elev, index) => {
-                const trimis = aFostTrimis(testId, elev, clasa);
-                return (
-                  <li key={index} className="flex justify-between items-center py-1">
-                    <span>👤 {elev.nume} <small className="text-xs text-gray-500 ml-2">{elev.email}</small> {trimis && <span className="text-xs text-gray-500 ml-2">✅ Trimis</span>}</span>
+
+              <ul className="mt-3 space-y-1">
+                {(studentsByClass[c.id] || []).map((e) => (
+                  <li key={e.id} className="flex items-center justify-between">
+                    <span>
+                      👤 {e.nume} ({e.email})
+                    </span>
                     <div className="flex gap-2">
-                      <button onClick={() => stergeElev(clasa, index)} className="bg-red-500 hover:bg-red-600 text-white text-xs px-3 py-1 rounded">🗑️ Șterge</button>
-                      {testId && !trimis && (
-                        <button onClick={() => trimiteTestLaElev(clasa, elev)} className="bg-green-500 hover:bg-green-600 text-white text-xs px-3 py-1 rounded">📤 Trimite elevului</button>
+                      <button
+                        className="bg-red-500 text-white rounded px-3 py-1 text-xs"
+                        onClick={() => onRemoveStudent(c.id, e.id, e.nume)}
+                      >
+                        🗑️ Șterge
+                      </button>
+                      {testId && (
+                        <button
+                          className="bg-green-600 text-white rounded px-3 py-1 text-xs"
+                          onClick={() => sendToStudent(e.id, e.nume)}
+                        >
+                          📤 Trimite elevului
+                        </button>
                       )}
                     </div>
                   </li>
-                );
-              })}
-            </ul>
+                ))}
+              </ul>
+            </div>
+          ))}
+          {classes.length === 0 && (
+            <div className="text-gray-600 text-sm">
+              Nu ai clase încă. Adaugă una mai sus.
+            </div>
+          )}
+        </div>
+
+        {/* footer info test ales */}
+        {testId && testSelectat && (
+          <div className="mt-6 text-sm text-gray-600">
+            Test selectat:{" "}
+            <span className="font-medium">{testSelectat.title}</span>
           </div>
-        ))}
+        )}
       </div>
     </div>
   );
-};
-
-export default EleviGestionare;
+}

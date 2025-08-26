@@ -1,37 +1,42 @@
+import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { supabase } from "@/lib/supabaseClient";
 
-import React, { useState, useEffect } from "react";
-import { useLocation, Link, useNavigate } from "react-router-dom";
+function parseGradeNumber(raw) {
+  if (!raw) return null;
+  const s = String(raw).trim().toUpperCase();
 
-const IntrebareGrila = ({ index, intrebare, setIntrebare, sterge }) => {
-  const handleChange = (field, value) => {
-    const newQ = { ...intrebare, [field]: value };
-    setIntrebare(index, newQ);
+  // 1) dacă are cifre, ia primul număr
+  const m = s.match(/\d+/);
+  if (m) {
+    const n = parseInt(m[0], 10);
+    if (!Number.isNaN(n)) return n;
+  }
+
+  // 2) roman numerals I–XII
+  const romanMap = {
+    I: 1,
+    II: 2,
+    III: 3,
+    IV: 4,
+    V: 5,
+    VI: 6,
+    VII: 7,
+    VIII: 8,
+    IX: 9,
+    X: 10,
+    XI: 11,
+    XII: 12,
   };
+  const token = s.replace(/CLASA|CL\s*|A\s*/g, "").trim(); // „Clasa IV” -> „IV”
+  if (romanMap[token]) return romanMap[token];
 
-  return (
-    <div className="p-4 border border-gray-300 rounded-xl bg-white space-y-2">
-      <input type="text" placeholder="Întrebare" value={intrebare.text} onChange={(e) => handleChange("text", e.target.value)} className="w-full p-2 border rounded" />
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        {["a", "b", "c", "d"].map((opt) => (
-          <input key={opt} type="text" placeholder={`Varianta ${opt}`} value={intrebare[opt]} onChange={(e) => handleChange(opt, e.target.value)} className="p-2 border rounded" />
-        ))}
-      </div>
-      <select value={intrebare.corecta} onChange={(e) => handleChange("corecta", e.target.value)} className="w-full p-2 border rounded bg-white">
-        <option value="">Alege varianta corectă</option>
-        {["a", "b", "c", "d"].map((opt) => (
-          <option key={opt} value={opt}>Varianta {opt}</option>
-        ))}
-      </select>
-      <button type="button" onClick={() => sterge(index)} className="text-red-600 text-sm mt-2 hover:underline">🗑 Șterge întrebare</button>
-    </div>
-  );
-};
+  return null; // lasă codul să pună fallback
+}
 
-const CreareTest = () => {
-  const location = useLocation();
+export default function CreareTest() {
   const navigate = useNavigate();
   const [test, setTest] = useState({
-    id: "",
     disciplina: "",
     clasa: "",
     tip: "",
@@ -41,134 +46,254 @@ const CreareTest = () => {
     data: "",
     ora: "",
     intrebari: [],
-    status: "neexpediat"
+    status: "draft",
   });
+  const [loading, setLoading] = useState(false);
 
-  const [salvat, setSalvat] = useState(false);
-
-  useEffect(() => {
-    const params = new URLSearchParams(location.search);
-    const id = params.get("id");
-    if (id) {
-      const toate = JSON.parse(localStorage.getItem("teste_profesor") || "[]");
-      const gasit = toate.find(t => t.id === id);
-      if (gasit) setTest(gasit);
-    }
-  }, [location]);
-
-  const adaugaIntrebare = () => {
-    setTest({
-      ...test,
-      intrebari: [...test.intrebari, { text: "", a: "", b: "", c: "", d: "", corecta: "" }],
+  const addIntrebare = (afterIndex = null) => {
+    setTest((prev) => {
+      const newQ = { text: "", a: "", b: "", c: "", d: "", corecta: "" };
+      const intrebari = [...prev.intrebari];
+      if (afterIndex === null) intrebari.push(newQ);
+      else intrebari.splice(afterIndex + 1, 0, newQ);
+      return { ...prev, intrebari };
     });
   };
 
-  const setIntrebare = (index, newData) => {
-    const intrebari = [...test.intrebari];
-    intrebari[index] = newData;
-    setTest({ ...test, intrebari });
+  const updateIntrebare = (index, field, value) => {
+    setTest((prev) => {
+      const intrebari = [...prev.intrebari];
+      intrebari[index][field] = value;
+      return { ...prev, intrebari };
+    });
   };
 
-  const stergeIntrebare = (index) => {
-    const intrebari = test.intrebari.filter((_, i) => i !== index);
-    setTest({ ...test, intrebari });
+  const normalizeForDB = (t) => {
+    const title =
+      (t.descriere || "").trim() ||
+      `${t.disciplina || "Test"} - ${t.clasa || ""}`.trim();
+
+    // derive numeric grade (NOT NULL în DB)
+    const gradeNum = parseGradeNumber(t.clasa);
+    // fallback politicos dacă nu reușim să-l deducem
+    const grade = gradeNum ?? 1;
+
+    const questions = Array.isArray(t.intrebari)
+      ? t.intrebari.map((q, idx) => ({
+          index: idx,
+          text: q.text || "",
+          a: q.a || "",
+          b: q.b || "",
+          c: q.c || "",
+          d: q.d || "",
+          corect: q.corecta || "",
+        }))
+      : [];
+
+    return {
+      title,
+      subject: t.disciplina || null,
+      grade_level: t.clasa || null, // păstrăm exact cum o scrii
+      grade, // numeric (1–12); necesar pt NOT NULL
+      phase: t.tip || null,
+      category: "profesor",
+      published: false,
+      questions, // jsonb pentru Raport Detaliat
+
+      // păstrăm structura ta în content
+      content: {
+        disciplina: t.disciplina,
+        clasa: t.clasa,
+        tip: t.tip,
+        competenta: t.competenta,
+        descriere: t.descriere,
+        profesor: t.profesor,
+        data: t.data,
+        ora: t.ora,
+        intrebari: t.intrebari,
+        status: t.status,
+      },
+      created_by: null, // setăm efectiv la insert cu user.id
+    };
   };
 
-  const salveazaTest = () => {
-    if (!test.data || !test.ora) {
-      alert("⚠️ Te rugăm să completezi atât data cât și ora testului!");
-      return;
+  const handleSave = async () => {
+    setLoading(true);
+    try {
+      const payload = normalizeForDB(test);
+      const { data: authData, error: authErr } = await supabase.auth.getUser();
+      if (authErr) throw authErr;
+      const userId = authData?.user?.id || null;
+
+      const { error } = await supabase.from("tests").insert([
+        {
+          title: payload.title,
+          subject: payload.subject,
+          grade_level: payload.grade_level,
+          grade: payload.grade, // ✅ previne NOT NULL violation
+          phase: payload.phase,
+          category: payload.category,
+          created_by: userId,
+          published: payload.published,
+          questions: payload.questions, // ✅ pentru Raport Detaliat
+          content: payload.content, // păstrăm tot ce aveai
+        },
+      ]);
+
+      if (error) throw error;
+
+      alert("✅ Testul a fost salvat cu succes!");
+      navigate("/profesor/teste");
+    } catch (e) {
+      console.error(e);
+      alert("❌ Eroare la salvare: " + (e?.message || "necunoscută"));
+    } finally {
+      setLoading(false);
     }
-    const toateProf = JSON.parse(localStorage.getItem("teste_profesor") || "[]");
-    const toateMele = JSON.parse(localStorage.getItem("teste_mele") || "[]");
-
-    let testFinal = { ...test };
-    if (!test.id) {
-      testFinal.id = Date.now().toString();
-    }
-
-    const actualizateProf = toateProf.filter(t => t.id !== testFinal.id);
-    const actualizateMele = toateMele.filter(t => t.id !== testFinal.id);
-
-    actualizateProf.push(testFinal);
-    actualizateMele.push(testFinal);
-
-    localStorage.setItem("teste_profesor", JSON.stringify(actualizateProf));
-    localStorage.setItem("teste_mele", JSON.stringify(actualizateMele));
-    setSalvat(true);
-
-    setTimeout(() => {
-      navigate("/profesor/teste-profesor");
-    }, 1500);
   };
 
   return (
-    <div className="-50 min-h-screen py-10 px-4 text-gray-800">
-      <div className="max-w-4xl mx-auto bg-white p-6 rounded-xl shadow space-y-6">
-        <div className="flex justify-between items-center">
-          <h1 className="text-2xl font-bold">✍️ Creare Test</h1>
-          <Link to="/profesor/dashboard" className="text-blue-600 hover:underline text-sm">← Înapoi la Dashboard</Link>
-        </div>
+    <div className="p-6 space-y-6 max-w-3xl mx-auto">
+      {/* 🔙 Buton sus, ca pe celelalte pagini */}
+      <div className="flex items-center justify-between">
+        <button
+          onClick={() => navigate("/profesor/dashboard")}
+          className="text-blue-600 hover:underline"
+        >
+          ⬅ Înapoi la Dashboard
+        </button>
+        <h1 className="text-2xl font-bold">Creare Test</h1>
+        <div />
+        {/* spacer */}
+      </div>
 
-        {salvat && (
-          <div className="bg-green-100 border border-green-300 text-green-800 px-4 py-3 rounded-xl text-sm">
-            ✅ Testul a fost salvat cu succes! Îl poți vedea în <Link to="/profesor/teste-profesor" className="underline font-medium">Testele Mele</Link>.
+      <div className="grid grid-cols-1 gap-4">
+        <input
+          type="text"
+          placeholder="Disciplina"
+          value={test.disciplina}
+          onChange={(e) => setTest({ ...test, disciplina: e.target.value })}
+          className="border rounded p-2 w-full"
+        />
+        <input
+          type="text"
+          placeholder="Clasa (ex. Clasa IV / 4 / IV)"
+          value={test.clasa}
+          onChange={(e) => setTest({ ...test, clasa: e.target.value })}
+          className="border rounded p-2 w-full"
+        />
+        <input
+          type="text"
+          placeholder="Tip test"
+          value={test.tip}
+          onChange={(e) => setTest({ ...test, tip: e.target.value })}
+          className="border rounded p-2 w-full"
+        />
+        <input
+          type="text"
+          placeholder="Competență"
+          value={test.competenta}
+          onChange={(e) => setTest({ ...test, competenta: e.target.value })}
+          className="border rounded p-2 w-full"
+        />
+        <input
+          type="text"
+          placeholder="Descriere"
+          value={test.descriere}
+          onChange={(e) => setTest({ ...test, descriere: e.target.value })}
+          className="border rounded p-2 w-full"
+        />
+        <input
+          type="text"
+          placeholder="Profesor"
+          value={test.profesor}
+          onChange={(e) => setTest({ ...test, profesor: e.target.value })}
+          className="border rounded p-2 w-full"
+        />
+        <input
+          type="date"
+          value={test.data}
+          onChange={(e) => setTest({ ...test, data: e.target.value })}
+          className="border rounded p-2 w-full"
+        />
+        <input
+          type="time"
+          value={test.ora}
+          onChange={(e) => setTest({ ...test, ora: e.target.value })}
+          className="border rounded p-2 w-full"
+        />
+      </div>
+
+      <div>
+        <h2 className="text-xl font-semibold mt-6 mb-2">Întrebări</h2>
+        {test.intrebari.map((q, idx) => (
+          <div key={idx} className="border rounded p-3 space-y-3 mb-3">
+            <input
+              type="text"
+              placeholder="Enunț întrebare"
+              value={q.text}
+              onChange={(e) => updateIntrebare(idx, "text", e.target.value)}
+              className="border rounded p-2 w-full"
+            />
+
+            {["a", "b", "c", "d"].map((lit) => (
+              <div key={lit} className="flex items-center space-x-3">
+                <span className="w-6 font-bold">{lit.toUpperCase()}.</span>
+                <input
+                  type="text"
+                  placeholder={`Varianta ${lit.toUpperCase()}`}
+                  value={q[lit]}
+                  onChange={(e) => updateIntrebare(idx, lit, e.target.value)}
+                  className="border rounded p-2 w-full"
+                />
+              </div>
+            ))}
+
+            {/* Dropdown a/b/c/d pentru răspunsul corect */}
+            <select
+              value={q.corecta}
+              onChange={(e) => updateIntrebare(idx, "corecta", e.target.value)}
+              className="border rounded p-2 w-full"
+            >
+              <option value="">Selectează răspunsul corect</option>
+              <option value="a">A</option>
+              <option value="b">B</option>
+              <option value="c">C</option>
+              <option value="d">D</option>
+            </select>
+
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => addIntrebare(idx)}
+                className="text-blue-600 text-sm"
+              >
+                ➕ Adaugă întrebare după aceasta
+              </button>
+            </div>
           </div>
-        )}
+        ))}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <select className="p-2 border rounded bg-white" value={test.disciplina} onChange={(e) => setTest({ ...test, disciplina: e.target.value })}>
-            <option value="">Alege disciplina</option>
-            <option>Matematică</option>
-            <option>Limba română</option>
-          </select>
-          <select className="p-2 border rounded bg-white" value={test.clasa} onChange={(e) => setTest({ ...test, clasa: e.target.value })}>
-            <option value="">Alege clasa</option>
-            <optgroup label="Ciclul Primar">
-              <option>Clasa pregătitoare</option>
-              <option>Clasa I</option>
-              <option>Clasa a II-a</option>
-              <option>Clasa a III-a</option>
-              <option>Clasa a IV-a</option>
-            </optgroup>
-            <optgroup label="Ciclul Gimnazial">
-              <option>Clasa a V-a</option>
-              <option>Clasa a VI-a</option>
-              <option>Clasa a VII-a</option>
-              <option>Clasa a VIII-a</option>
-            </optgroup>
-          </select>
-          <select className="p-2 border rounded bg-white" value={test.tip} onChange={(e) => setTest({ ...test, tip: e.target.value })}>
-            <option value="">Tip test</option>
-            <option>Evaluare Curentă</option>
-            <option>Evaluare Națională</option>
-            <option>Test pentru elevii mei</option>
-          </select>
-          <input type="text" placeholder="Profesor" className="p-2 border rounded" value={test.profesor} onChange={(e) => setTest({ ...test, profesor: e.target.value })} />
-          <input type="text" placeholder="Competență vizată" className="p-2 border rounded col-span-1 sm:col-span-2" value={test.competenta} onChange={(e) => setTest({ ...test, competenta: e.target.value })} />
-          <input type="text" placeholder="Descriere test" className="p-2 border rounded col-span-1 sm:col-span-2" value={test.descriere} onChange={(e) => setTest({ ...test, descriere: e.target.value })} />
-          <input type="date" className="p-2 border rounded" value={test.data} onChange={(e) => setTest({ ...test, data: e.target.value })} />
-          <input type="time" className="p-2 border rounded" value={test.ora} onChange={(e) => setTest({ ...test, ora: e.target.value })} />
-        </div>
-
-        <div className="space-y-4">
-          <div className="flex justify-between items-center">
-            <h2 className="text-lg font-semibold">Întrebări grilă</h2>
-            <button onClick={adaugaIntrebare} className="text-sm text-blue-700 hover:underline">+ Adaugă întrebare</button>
-          </div>
-          {test.intrebari.map((q, index) => (
-            <IntrebareGrila key={index} index={index} intrebare={q} setIntrebare={setIntrebare} sterge={stergeIntrebare} />
-          ))}
-        </div>
-
-        <div className="flex justify-end">
-          <button onClick={salveazaTest} className="bg-indigo-600 text-white px-6 py-2 rounded-xl hover:bg-indigo-700 transition">
-            💾 Salvează testul
+        {test.intrebari.length === 0 && (
+          <button
+            type="button"
+            onClick={() => addIntrebare(null)}
+            className="bg-gray-200 px-4 py-2 rounded"
+          >
+            ➕ Adaugă prima întrebare
           </button>
-        </div>
+        )}
+      </div>
+
+      <div className="flex space-x-4">
+        <button
+          onClick={handleSave}
+          disabled={loading}
+          className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+        >
+          {loading ? "Se salvează..." : "💾 Salvează Test"}
+        </button>
       </div>
     </div>
   );
-};
-
-export default CreareTest;
+}

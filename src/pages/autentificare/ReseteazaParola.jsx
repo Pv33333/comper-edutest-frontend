@@ -1,25 +1,31 @@
-
 import { useState } from "react";
 import { Link } from "react-router-dom";
+import { useAuthContext } from "@/context/SupabaseAuthProvider.jsx";
 
 export default function ReseteazaParola() {
   const [email, setEmail] = useState("");
   const [showSuccess, setShowSuccess] = useState(false);
   const [error, setError] = useState(false);
+  const [errMsg, setErrMsg] = useState("");
+  const { resetPasswordForEmail } = useAuthContext();
 
-  const validateEmail = (email) => {
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-  };
+  const validateEmail = (email) => /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError(false);
+    setErrMsg("");
 
     if (!validateEmail(email)) {
       setError(true);
       return;
     }
 
+    const { error: se } = await resetPasswordForEmail(email);
+    if (se) {
+      setErrMsg(se.message || "Nu am putut trimite emailul de resetare.");
+      return;
+    }
     setShowSuccess(true);
   };
 
@@ -53,28 +59,43 @@ export default function ReseteazaParola() {
             {!showSuccess ? (
               <>
                 <div className="text-center">
-                  <h2 className="text-3xl font-semibold text-gray-800">Resetare parolă</h2>
+                  <h2 className="text-3xl font-semibold text-gray-800">
+                    Resetare parolă
+                  </h2>
                   <p className="text-base text-gray-700">
-                    Introdu adresa ta de email și îți vom trimite un link de resetare.
+                    Introdu adresa ta de email și îți vom trimite un link de
+                    resetare.
                   </p>
                 </div>
+                {errMsg && (
+                  <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-red-700 text-sm">
+                    {errMsg}
+                  </div>
+                )}
                 <form className="space-y-4" onSubmit={handleSubmit}>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700" htmlFor="email">
+                    <label
+                      className="block text-sm font-medium text-gray-700"
+                      htmlFor="email"
+                    >
                       Email
                     </label>
                     <div className="relative">
                       <input
                         type="email"
                         id="email"
-                        className={`p-2 border rounded-md w-full ${error ? "border-red-400" : "border-gray-300"}`}
+                        className={`p-2 border rounded-md w-full ${
+                          error ? "border-red-400" : "border-gray-300"
+                        }`}
                         placeholder="ex: nume@domeniu.ro"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         required
                       />
                       {error && (
-                        <p className="text-sm text-red-600 mt-1">Email invalid.</p>
+                        <p className="text-sm text-red-600 mt-1">
+                          Email invalid.
+                        </p>
                       )}
                     </div>
                   </div>

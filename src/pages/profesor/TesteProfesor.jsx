@@ -1,112 +1,144 @@
-// ✅ TesteProfesor.jsx 
 import React, { useEffect, useState } from "react";
-import TestCard from "../../components/TestCard";
-import { Link, useNavigate } from "react-router-dom";
-import DateTimePicker from "../../components/DateTimePicker";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/context/SupabaseAuthProvider.jsx";
+import { listTests, deleteTest } from "@/services/testsService.js";
 
-const TesteProfesor = () => {
-  const [teste, setTeste] = useState([]);
-  const [selectedTest, setSelectedTest] = useState(null);
-  const [modalOpen, setModalOpen] = useState(false);
+export default function TesteProfesor() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const [tests, setTests] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  async function load() {
+    try {
+      setLoading(true);
+      const data = await listTests({
+        created_by: user?.id,
+        category: "profesor",
+      });
+      setTests(Array.isArray(data) ? data : []);
+    } catch (e) {
+      console.warn(e);
+      setTests([]);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    const toate = JSON.parse(localStorage.getItem("teste_profesor") || "[]");
-    setTeste(toate);
-  }, []);
+    if (user) load();
+  }, [user]);
 
-  const modificaTest = (id) => {
-    navigate(`/profesor/creare-test?id=${id}`);
-  };
+  const onCreate = () => navigate("/profesor/creare-test");
+  const onEdit = (id) => navigate(`/profesor/creare-test?id=${id}`);
+  const onSend = (id) => navigate(`/profesor/elevi?testId=${id}`);
+  const onSchedule = (id) => navigate(`/profesor/calendar?add=${id}`);
 
-  const stergeTest = (index) => {
-    if (confirm("Ești sigur că vrei să ștergi acest test?")) {
-      const updated = [...teste];
-      updated.splice(index, 1);
-      setTeste(updated);
-      localStorage.setItem("teste_profesor", JSON.stringify(updated));
+  const onDelete = async (id) => {
+    if (!window.confirm("Ștergi acest test?")) return;
+    try {
+      await deleteTest(id);
+    } finally {
+      load();
     }
-  };
-
-  const trimiteLaElev = (test) => {
-    const primite = JSON.parse(localStorage.getItem("teste_primite") || "[]");
-    const deja = primite.find(t => t.id === test.id);
-    if (!deja) {
-      primite.push(test);
-      localStorage.setItem("teste_primite", JSON.stringify(primite));
-    }
-    navigate(`/profesor/elevi?testId=${test.id}`);
-  };
-
-  const trimiteLaAdmin = (test) => {
-    const actualizat = teste.map(t =>
-      t.id === test.id ? { ...t, status: "in_asteptare" } : t
-    );
-    setTeste(actualizat);
-    localStorage.setItem("teste_profesor", JSON.stringify(actualizat));
-    alert("✅ Testul a fost trimis spre validare admin.");
-  };
-
-  const deschideCalendar = (test) => {
-    setSelectedTest(test);
-    setModalOpen(true);
-  };
-
-  const salveazaInCalendar = ({ date, time, subject, desc }) => {
-    const toate = JSON.parse(localStorage.getItem("tests_from_prof") || "[]");
-    const complet = {
-      ...selectedTest,
-      date: date,
-      time: time,
-      subject: subject,
-      desc: desc,
-      prof: true,
-      confirmed: false
-    };
-    toate.push(complet);
-    localStorage.setItem("tests_from_prof", JSON.stringify(toate));
-    setModalOpen(false);
-    alert("📅 Test programat în calendar.");
-    navigate("/profesor/calendar");
   };
 
   return (
-    <div className="-50 min-h-screen py-10 px-4 text-gray-800">
-      <div className="max-w-4xl mx-auto space-y-6">
-        <div className="flex justify-between items-center">
-          <Link to="/profesor/dashboard" className="text-blue-600 hover:underline text-sm">← Înapoi la Dashboard</Link>
-          <Link to="/profesor/creare-test" className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-xl shadow transition text-sm">➕ Creează test nou</Link>
+    <div className="-50 text-gray-800 min-h-screen">
+      <section className="max-w-6xl mx-auto mt-10 mb-8 px-4">
+        <a
+          href="/profesor/dashboard"
+          className="flex items-center justify-center gap-2 text-base sm:text-lg text-blue-700 hover:text-blue-900 transition font-medium"
+        >
+          <svg
+            className="w-5 h-5 sm:w-6 sm:h-6"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            viewBox="0 0 24 24"
+          >
+            <path
+              d="M15 19l-7-7 7-7"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+          Înapoi la Dashboard
+        </a>
+      </section>
+
+      <main className="min-h-screen px-6 py-10 max-w-6xl mx-auto">
+        <div className="flex items-center justify-between mb-6">
+          <h1 className="text-3xl font-bold text-blue-900">🧪 Testele mele</h1>
+          <button
+            onClick={onCreate}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl shadow-sm"
+          >
+            ➕ Creează test
+          </button>
         </div>
 
-        <h1 className="text-3xl font-bold text-blue-900 text-center">📋 Testele Profesorului</h1>
+        {loading && <p className="text-gray-500">Se încarcă...</p>}
 
-        {teste.length === 0 ? (
-          <p className="text-center text-gray-500">Nu ai creat încă niciun test.</p>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {teste.map((test, index) => (
-              <TestCard
-                key={test.id}
-                test={test}
-                onModifica={() => modificaTest(test.id)}
-                onSterge={() => stergeTest(index)}
-                onTrimiteElevului={() => trimiteLaElev(test)}
-                onTrimiteAdminului={() => trimiteLaAdmin(test)}
-                onProgrameaza={() => deschideCalendar(test)}
-              />
-            ))}
-          </div>
-        )}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          {!loading && tests.length === 0 && (
+            <p className="text-gray-500 col-span-full text-center">
+              Nu ai încă teste.
+            </p>
+          )}
 
-        {modalOpen && (
-          <DateTimePicker
-            onConfirm={salveazaInCalendar}
-            onCancel={() => setModalOpen(false)}
-          />
-        )}
-      </div>
+          {tests.map((t) => (
+            <div
+              key={t.id}
+              className="bg-white rounded-xl shadow border border-gray-200 p-5 flex flex-col justify-between"
+            >
+              <div>
+                <h2 className="text-xl font-bold text-blue-800 mb-1">
+                  {t.title}
+                </h2>
+                <p className="text-sm text-gray-700 mb-1">
+                  <strong>Materie:</strong> {t.subject || "—"}
+                </p>
+                <p className="text-sm text-gray-700 mb-1">
+                  <strong>Clasa:</strong> {t.grade_level || "—"}
+                </p>
+                {t.phase && (
+                  <p className="text-sm text-gray-700 mb-2">
+                    <strong>Fază:</strong> {t.phase}
+                  </p>
+                )}
+              </div>
+
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => onSend(t.id)}
+                  className="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-3 rounded-xl transition"
+                >
+                  📤 Trimite elevului
+                </button>
+                <button
+                  onClick={() => onEdit(t.id)}
+                  className="bg-yellow-500 hover:bg-yellow-600 text-white font-semibold py-2 px-3 rounded-xl transition"
+                >
+                  ✏️ Editează
+                </button>
+                <button
+                  onClick={() => onSchedule(t.id)}
+                  className="col-span-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-3 rounded-xl transition"
+                >
+                  🗓 Programează în calendar
+                </button>
+                <button
+                  onClick={() => onDelete(t.id)}
+                  className="col-span-2 text-sm text-red-600 hover:underline"
+                >
+                  🗑️ Șterge
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </main>
     </div>
   );
-};
-
-export default TesteProfesor;
+}

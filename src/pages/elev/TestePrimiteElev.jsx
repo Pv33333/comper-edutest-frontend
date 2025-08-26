@@ -1,76 +1,115 @@
+// src/pages/elev/TestePrimiteElev.jsx
 import React, { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import { listStudentAssignments } from "@/services/calendarService.js";
+import { hideAssignment } from "@/services/assignmentsService.js";
 
-export default function TesteProfesorElev() {
+export default function TestePrimiteElev() {
   const [tests, setTests] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
 
-  useEffect(() => {
+  const load = async () => {
     try {
-      const raw = localStorage.getItem("teste_primite");
-      const list = raw ? JSON.parse(raw) : [];
-      setTests(Array.isArray(list) ? list : []);
-    } catch {
-      setTests([]);
+      setLoading(true);
+      setErr("");
+      const data = await listStudentAssignments(); // exclude deja testele ascunse
+      setTests(data || []);
+    } catch (e) {
+      setErr(e?.message || "A apărut o eroare la încărcarea testelor.");
+    } finally {
+      setLoading(false);
     }
-  }, []);
-
-  const removeTest = (id) => {
-    const ok = window.confirm("Ești sigur că vrei să ștergi acest test?");
-    if (!ok) return;
-    const next = tests.filter(t => t.id !== id);
-    setTests(next);
-    localStorage.setItem("teste_primite", JSON.stringify(next));
   };
 
+  useEffect(() => {
+    load();
+  }, []);
+
+  const onHide = async (scheduledId) => {
+    try {
+      // optimist: scoatem local
+      setTests((prev) => prev.filter((t) => t.id !== scheduledId));
+      await hideAssignment(scheduledId); // scrie în DB
+    } catch (e) {
+      // rollback simplu
+      await load();
+      alert(e?.message || "Nu am putut ascunde testul.");
+    }
+  };
+
+  if (loading) return <div className="p-6">Se încarcă…</div>;
+
   return (
-    <div className="-50 text-gray-800 min-h-screen">
-      <section className="max-w-6xl mx-auto mt-10 mb-8 px-4">
-        <a
-          className="flex items-center justify-center gap-2 text-base sm:text-lg text-blue-700 hover:text-blue-900 transition font-medium"
-          href="/elev/dashboard"
-        >
-          <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-            <path d="M15 19l-7-7 7-7" strokeLinecap="round" strokeLinejoin="round"></path>
-          </svg>
-          Înapoi la Dashboard
-        </a>
-      </section>
+    <div className="max-w-3xl mx-auto p-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-gray-800">📥 Teste primite</h1>
+        <Link className="text-blue-600 hover:underline" to="/elev/dashboard">
+          ← Înapoi la Dashboard
+        </Link>
+      </div>
 
-      <main className="min-h-screen px-6 py-10 max-w-6xl mx-auto">
-        <h1 className="text-3xl font-bold text-center mb-10 text-purple-800">📥 Teste de la profesor</h1>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {tests.length === 0 && (
-            <p className="text-gray-500 col-span-full text-center">
-              Momentan nu ai teste primite de la profesor.
-            </p>
-          )}
-
-          {tests.map(test => (
-            <div key={test.id} className="bg-white rounded-xl shadow border border-gray-200 p-5 flex flex-col justify-between">
-              <div>
-                <h2 className="text-xl font-bold text-blue-800 mb-1">{test.titlu}</h2>
-                <p className="text-sm text-gray-700 mb-1"><strong>Materie:</strong> {test.materie}</p>
-                <p className="text-sm text-gray-700 mb-1"><strong>Clasa:</strong> {test.clasa}</p>
-                <p className="text-sm text-gray-700 mb-2"><strong>Profesor:</strong> {test.profesor}</p>
-              </div>
-
-              <a
-                href={test.link}
-                className="mt-3 inline-block text-center bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-xl transition"
-              >
-                📝 Rezolvă testul
-              </a>
-
-              <button
-                onClick={() => removeTest(test.id)}
-                className="mt-2 text-sm text-red-600 hover:underline"
-              >
-                🗑️ Șterge testul
-              </button>
-            </div>
-          ))}
+      {err && (
+        <div className="mt-4 bg-red-50 border border-red-200 text-red-700 p-3 rounded-xl">
+          {err}
         </div>
-      </main>
+      )}
+
+      {tests.length === 0 ? (
+        <div className="mt-6 text-gray-600">Nu ai teste noi.</div>
+      ) : (
+        <ul className="mt-6 space-y-4">
+          {tests.map((t) => {
+            const test = t.tests || {};
+            return (
+              <li key={t.id} className="p-4 bg-white rounded-xl shadow border">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h2 className="text-lg font-semibold text-blue-800">
+                      {test.title || "Test"}
+                    </h2>
+                    <div className="text-sm text-gray-600">
+                      Materie: <b>{test.subject || "-"}</b> · Clasa:{" "}
+                      <b>{test.grade_level || "-"}</b>
+                    </div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      Programat: {new Date(t.scheduled_at).toLocaleString()}
+                      {t.due_at
+                        ? ` · Scadent: ${new Date(t.due_at).toLocaleString()}`
+                        : ""}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Link
+                      to={`/elev/rezolva-test/${t.test_id}`}
+                      className="px-3 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 text-sm"
+                    >
+                      ▶️ Deschide
+                    </Link>
+
+                    {/* Înlocuim Șterge cu Ascunde (persistă în Supabase) */}
+                    <button
+                      onClick={() => onHide(t.id)} // t.id = scheduled_tests.id
+                      className="px-3 py-2 rounded-lg border text-gray-700 hover:bg-gray-50 text-sm"
+                      title="Ascunde din lista mea (nu șterge din server)"
+                    >
+                      🗂️ Ascunde
+                    </button>
+                  </div>
+                </div>
+
+                {/* Descriere opțională */}
+                {test?.content?.descriere && (
+                  <p className="text-sm text-gray-700 mt-3">
+                    {test.content.descriere}
+                  </p>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }

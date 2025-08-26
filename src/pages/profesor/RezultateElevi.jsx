@@ -1,98 +1,142 @@
-
 import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { supabase } from "@/lib/supabaseClient";
 
-const RezultateElevi = () => {
-  const [elevi, setElevi] = useState([]);
-  const [selectedElev, setSelectedElev] = useState("");
-  const [teste, setTeste] = useState([]);
+export default function RezultateElevi() {
+  const navigate = useNavigate();
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const keys = Object.keys(localStorage).filter(k => k.startsWith("rezultat_test_"));
-    const eleviUnici = [...new Set(keys.map(k => k.split("_").pop()))];
-    setElevi(eleviUnici);
+    const load = async () => {
+      try {
+        setLoading(true);
+
+        const { data: authData, error: authErr } =
+          await supabase.auth.getUser();
+        if (authErr) throw authErr;
+        const user = authData?.user;
+        if (!user) throw new Error("Neautentificat");
+
+        // 1️⃣ aflăm testele create de profesor
+        const { data: tests, error: tErr } = await supabase
+          .from("tests")
+          .select("id")
+          .eq("created_by", user.id);
+        if (tErr) throw tErr;
+
+        const testIds = (tests || []).map((t) => t.id);
+        if (testIds.length === 0) {
+          setRows([]);
+          return;
+        }
+
+        // 2️⃣ rezultatele testelor → cu join profiles
+        const { data: results, error: rErr } = await supabase
+          .from("results")
+          .select(
+            `
+            id,
+            test_id,
+            student_id,
+            score,
+            duration_sec,
+            submitted_at,
+            profiles:student_id ( full_name, email )
+          `
+          )
+          .in("test_id", testIds)
+          .order("submitted_at", { ascending: false });
+        if (rErr) throw rErr;
+
+        setRows(results || []);
+      } catch (e) {
+        console.error(e);
+        setRows([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    load();
   }, []);
 
-  useEffect(() => {
-    if (!selectedElev) {
-      setTeste([]);
-      return;
-    }
+  const onVeziDetalii = (row) => {
+    sessionStorage.setItem("raport_selectat_testID", row.test_id);
+    sessionStorage.setItem("raport_selectat_elevID", row.student_id);
+    sessionStorage.setItem("raport_selectat_resultID", row.id);
+    navigate("/profesor/raport-detaliat");
+  };
 
-    const rezultate = Object.keys(localStorage)
-      .filter(k => k.startsWith("rezultat_test_") && k.endsWith("_" + selectedElev))
-      .map(k => JSON.parse(localStorage.getItem(k)));
-
-    setTeste(rezultate);
-  }, [selectedElev]);
-
-  const selectRaport = (testID, elevID) => {
-    sessionStorage.setItem("raport_selectat_testID", testID);
-    sessionStorage.setItem("raport_selectat_elevID", elevID);
+  const fmtDurata = (sec) => {
+    const s = Number(sec || 0);
+    const m = Math.floor(s / 60);
+    const r = s % 60;
+    return `${m}m ${String(r).padStart(2, "0")}s`;
   };
 
   return (
-    <div className="text-blue-900 font-sans min-h-screen flex flex-col">
-      <div className="w-full text-center mt-6"></div>
-
-      <section className="max-w-6xl mx-auto mt-10 mb-8 px-4">
-        <a
-          className="flex items-center justify-center gap-2 text-base sm:text-lg text-blue-700 hover:text-blue-900 transition font-medium"
-          href="/profesor/dashboard"
+    <div className="p-6 max-w-6xl mx-auto space-y-6">
+      <div className="flex items-center justify-between">
+        <button
+          onClick={() => navigate("/profesor/dashboard")}
+          className="text-blue-600 hover:underline"
         >
-          <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-            <path d="M15 19l-7-7 7-7" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          Înapoi la Dashboard
-        </a>
-      </section>
+          ⬅ Înapoi la Dashboard
+        </button>
+        <h1 className="text-2xl font-bold">📊 Rezultate elevi</h1>
+        <div />
+      </div>
 
-      <main className="max-w-5xl mx-auto px-6 py-10 space-y-8 flex-grow">
-        <h1 className="text-4xl font-bold text-center">👥 Rezultate Elevi</h1>
-        <div className="text-center">
-          <label className="text-lg font-medium mb-2 block" htmlFor="elevSelect">Selectează un elev:</label>
-          <select
-            id="elevSelect"
-            className="w-full max-w-md mx-auto block border border-gray-300 rounded-lg px-4 py-2 text-sm"
-            value={selectedElev}
-            onChange={(e) => setSelectedElev(e.target.value)}
-          >
-            <option value="">-- Selectează elevul --</option>
-            {elevi.map((elev, i) => (
-              <option key={i} value={elev}>{elev}</option>
+      {loading && <p>Se încarcă...</p>}
+
+      {!loading && rows.length === 0 && (
+        <p className="text-gray-500">Nu există rezultate încă.</p>
+      )}
+
+      {!loading && rows.length > 0 && (
+        <table className="min-w-full border text-sm">
+          <thead className="bg-gray-100">
+            <tr>
+              <th className="p-2 border">Elev</th>
+              <th className="p-2 border">Email</th>
+              <th className="p-2 border">Test</th>
+              <th className="p-2 border">Scor</th>
+              <th className="p-2 border">Durată</th>
+              <th className="p-2 border">Dată</th>
+              <th className="p-2 border">Acțiuni</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.id} className="border-t">
+                <td className="p-2 border">
+                  {r.profiles?.full_name || r.student_id}
+                </td>
+                <td className="p-2 border">{r.profiles?.email || "—"}</td>
+                <td className="p-2 border">
+                  <code className="text-xs">{r.test_id}</code>
+                </td>
+                <td className="p-2 border">{r.score}</td>
+                <td className="p-2 border">{fmtDurata(r.duration_sec)}</td>
+                <td className="p-2 border">
+                  {r.submitted_at
+                    ? new Date(r.submitted_at).toLocaleString()
+                    : "—"}
+                </td>
+                <td className="p-2 border">
+                  <button
+                    onClick={() => onVeziDetalii(r)}
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded"
+                  >
+                    Vezi detalii test
+                  </button>
+                </td>
+              </tr>
             ))}
-          </select>
-        </div>
-
-        <div className="space-y-4">
-          {selectedElev && teste.length === 0 && (
-            <p className="text-center text-gray-500">Nicio testare găsită pentru acest elev.</p>
-          )}
-
-          {teste.map((test, index) => {
-            const scor = test.raspunsuri.filter(r => r.elev === r.corect).length;
-            const total = test.raspunsuri.length;
-            const procent = Math.round((scor / total) * 100);
-            const feedback = procent >= 80 ? "🎉 Excelent" : procent >= 60 ? "👍 Bine" : "⚠️ Necesită îmbunătățire";
-
-            return (
-              <div key={index} className="bg-white rounded-xl shadow p-5 border border-gray-200">
-                <h3 className="text-xl font-semibold text-blue-800 mb-2">🧪 {test.testID} – {test.data}</h3>
-                <p className="text-sm text-gray-700 mb-1">Scor: <strong>{scor}/{total}</strong> ({procent}%)</p>
-                <p className="text-sm text-gray-500 mb-2">Feedback: {feedback}</p>
-                <a
-                  href="/profesor/raport-detaliat"
-                  onClick={() => selectRaport(test.testID, test.elevID)}
-                  className="text-blue-600 hover:underline text-sm"
-                >
-                  Vezi detalii test
-                </a>
-              </div>
-            );
-          })}
-        </div>
-      </main>
+          </tbody>
+        </table>
+      )}
     </div>
   );
-};
-
-export default RezultateElevi;
+}
