@@ -3,6 +3,7 @@
   "buildCommand": "npm run build",
   "installCommand": "npm ci || npm install",
   "outputDirectory": "dist",
+  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }],
   "env": {
     "VITE_SUPABASE_URL": "@supabase-url",
     "VITE_SUPABASE_ANON_KEY": "@supabase-anon-key"
