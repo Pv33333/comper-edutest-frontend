@@ -1,20 +1,16 @@
-/** @type {import('tailwindcss').Config} */
-export default {
-  content: [
-    "./index.html",
-    "./src/**/*.{js,ts,jsx,tsx}",
-  ],
+// tailwind.config.cjs
+module.exports = {
+  content: ["./index.html", "./src/**/*.{js,jsx,ts,tsx}"],
   theme: {
     extend: {
       colors: {
         brand: {
-          primary: "var(--brand-primary)",
-          accent: "var(--brand-accent)",
-          surface: "var(--brand-surface)",
+          primary: "#1e40af", // 🔵 Albastru (ex: bg-brand-primary)
+          accent: "#f59e0b", // 🟡 Galben accent (ex: text-brand-accent)
         },
       },
       fontFamily: {
-        sans: [
+        inter: [
           "Inter",
           "ui-sans-serif",
           "system-ui",
