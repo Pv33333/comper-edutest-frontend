@@ -5,19 +5,60 @@ import SiteLayout from "@/layouts/SiteLayout.jsx";
 import Loader from "@/components/Loader.jsx";
 import ErrorBoundary from "@/components/ErrorBoundary.jsx";
 import { routes } from "@/router/routes.js";
-import { RequireRole } from "@/context/SupabaseAuthProvider.jsx";
+import { useAuth } from "@/context/AuthContext.jsx";
+
+// Auth pages (non-lazy)
+import Login from "@/pages/autentificare/Login.jsx";
+import Inregistrare from "@/pages/autentificare/Inregistrare.jsx";
+import OAuthCallback from "@/pages/autentificare/OAuthCallback.jsx";
+import LoginAdmin from "@/pages/autentificare/LoginAdmin.jsx"; // ← pagina de login admin
+
+// Lazy pages (utilizatori)
+const DashboardElev = lazy(() => import("@/pages/elev/DashboardElev.jsx"));
+const RezolvaTest = lazy(() => import("@/pages/elev/RezolvaTest.jsx"));
+const DashboardProfesor = lazy(() =>
+  import("@/pages/profesor/DashboardProfesor.jsx")
+);
+const EleviGestionare = lazy(() =>
+  import("@/pages/profesor/EleviGestionare.jsx")
+);
+const RezultateElevi = lazy(() =>
+  import("@/pages/profesor/RezultateElevi.jsx")
+);
+const RapoarteTestare = lazy(() =>
+  import("@/pages/profesor/RapoarteTestare.jsx")
+);
+const RaportDetaliat = lazy(() =>
+  import("@/pages/profesor/RaportDetaliat.jsx")
+);
+const DashboardParinte = lazy(() =>
+  import("@/pages/parinte/DashboardParinte.jsx")
+);
+
+// Lazy pages (admin)
+const DashboardAdmin = lazy(() => import("@/pages/admin/DashboardAdmin.jsx"));
 
 const withSuspense = (el) => <Suspense fallback={<Loader />}>{el}</Suspense>;
 
-// Elev
-const RezolvaTest = lazy(() => import("@/pages/elev/RezolvaTest.jsx"));
+function RequireRole({
+  allow = [],
+  children,
+  fallback = "/autentificare/login",
+}) {
+  const { user, role, authReady } = useAuth();
+  if (!authReady) return <Loader />;
+  if (!user) return <Navigate to={fallback} replace />;
+  if (!allow.includes(role)) return <Navigate to={fallback} replace />;
+  return children;
+}
 
-// Profesor
-const RezultateElevi = lazy(() => import("@/pages/profesor/RezultateElevi.jsx"));
-const RapoarteTestare = lazy(() => import("@/pages/profesor/RapoarteTestare.jsx"));
-// ✅ Folosim doar varianta care citește din DB
-const RaportDetaliat = lazy(() => import("@/pages/profesor/RaportDetaliat.jsx"));
-const EleviGestionare = lazy(() => import("@/pages/profesor/EleviGestionare.jsx"));
+// (Opțional) gardă 404 pentru /admin/* ca să „mascheze” zona admin
+function RequireAdmin404({ children }) {
+  const { user, role, authReady } = useAuth();
+  if (!authReady) return <Loader />;
+  if (!user || role !== "admin") return <Navigate to="/404" replace />;
+  return children;
+}
 
 function NotFound() {
   return (
@@ -40,14 +81,31 @@ function NotFound() {
 export default function AppRouter() {
   const HomeCmp = routes.find((r) => r.path === "/")?.el;
 
-  const guardedPaths = new Set(["/elev/rezolva-test/:id", "/elev/teste/:id"]);
+  // URL „ascuns” pentru login admin (nu-l expune nicăieri în UI)
+  const ADMIN_PATH =
+    import.meta.env.VITE_ADMIN_PATH || "/_internal/login-admin";
+
+  const guardedPaths = new Set([
+    "/elev/rezolva-test/:id",
+    "/elev/teste/:id",
+    "/elev/dashboard",
+    "/profesor/dashboard",
+    "/profesor/elevi",
+    "/profesor/rezultate-elevi",
+    "/profesor/rapoarte-testare",
+    "/profesor/raport-detaliat",
+    "/parinte/dashboard",
+    "/admin/dashboard",
+  ]);
 
   return (
     <BrowserRouter>
       <Routes>
-        <Route element={<SiteLayout />}>
+        {/* 🔒 Login admin separat, în afara layout-ului public */}
+        <Route path={ADMIN_PATH} element={<LoginAdmin />} />
 
-          {/* Homepage */}
+        {/* 🌐 zona publică + rutele user */}
+        <Route element={<SiteLayout />}>
           {HomeCmp ? (
             <>
               <Route index element={withSuspense(<HomeCmp />)} />
@@ -60,7 +118,23 @@ export default function AppRouter() {
             />
           )}
 
-          {/* Elev routes */}
+          {/* Auth public */}
+          <Route path="/autentificare/login" element={<Login />} />
+          <Route
+            path="/autentificare/inregistrare"
+            element={<Inregistrare />}
+          />
+          <Route path="/autentificare/callback" element={<OAuthCallback />} />
+
+          {/* Elev */}
+          <Route
+            path="/elev/dashboard"
+            element={
+              <RequireRole allow={["elev"]}>
+                {withSuspense(<DashboardElev />)}
+              </RequireRole>
+            }
+          />
           <Route
             path="/elev/rezolva-test/:id"
             element={
@@ -78,7 +152,15 @@ export default function AppRouter() {
             }
           />
 
-          {/* Profesor routes */}
+          {/* Profesor */}
+          <Route
+            path="/profesor/dashboard"
+            element={
+              <RequireRole allow={["profesor"]}>
+                {withSuspense(<DashboardProfesor />)}
+              </RequireRole>
+            }
+          />
           <Route
             path="/profesor/elevi"
             element={
@@ -111,13 +193,28 @@ export default function AppRouter() {
               </RequireRole>
             }
           />
-          {/* 🔁 Redirect de la vechea pagină demo/localStorage */}
+
+          {/* Părinte */}
           <Route
-            path="/profesor/raport-detaliat-profesor"
-            element={<Navigate to="/profesor/raport-detaliat" replace />}
+            path="/parinte/dashboard"
+            element={
+              <RequireRole allow={["parinte"]}>
+                {withSuspense(<DashboardParinte />)}
+              </RequireRole>
+            }
           />
 
-          {/* Restul rutelor din manifest */}
+          {/* Admin – protejat; non-admin → 404 (mascat) */}
+          <Route
+            path="/admin/dashboard"
+            element={
+              <RequireAdmin404>
+                {withSuspense(<DashboardAdmin />)}
+              </RequireAdmin404>
+            }
+          />
+
+          {/* Restul din manifest (neprotejate explicit aici) */}
           {routes
             .filter((r) => r.path !== "/" && !guardedPaths.has(r.path))
             .map(({ path, el: Cmp }) => (
@@ -128,12 +225,11 @@ export default function AppRouter() {
               />
             ))}
 
-          {/* Aliasuri utile */}
           <Route
             path="/demo-teste"
             element={<Navigate to="/demo/teste" replace />}
           />
-
+          <Route path="/404" element={<NotFound />} />
           <Route path="*" element={<NotFound />} />
         </Route>
       </Routes>

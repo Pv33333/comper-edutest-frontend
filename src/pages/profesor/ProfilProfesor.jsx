@@ -1,73 +1,285 @@
-import React, { useState, useEffect } from "react"; 
+// src/pages/profesor/ProfilProfesor.jsx
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { useSession, useSupabaseClient } from "@supabase/auth-helpers-react";
 
-const ProfilProfesor = () => {
-  const [profil, setProfil] = useState({
-    prenume: "",
-    nume: "",
-    dataNasterii: "",
-    email: "",
-    telefon: "",
-    judet: "",
-    oras: "",
-    scoala: "",
-    username: ""
-  });
+// util localStorage
+const ls = {
+  get(k, d) {
+    try {
+      return JSON.parse(localStorage.getItem(k) || JSON.stringify(d));
+    } catch {
+      return d;
+    }
+  },
+  set(k, v) {
+    localStorage.setItem(k, JSON.stringify(v));
+  },
+};
 
-  const [salvat, setSalvat] = useState(false);
+const empty = {
+  first_name: "",
+  last_name: "",
+  birth_date: "",
+  email: "",
+  phone: "",
+  county: "",
+  city: "",
+  school: "",
+  username: "",
+};
+
+export default function ProfilProfesor() {
+  const session = useSession();
+  const supabase = useSupabaseClient();
+  const user = session?.user || null;
+
+  const [form, setForm] = useState(empty);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [toast, setToast] = useState(null);
+
+  // valori implicite din înregistrare (Auth)
+  const defaultsFromAuth = useMemo(() => {
+    if (!user) return {};
+    const m = user.user_metadata || {};
+    const first =
+      m.given_name || (m.full_name ? m.full_name.split(" ")[0] : "") || "";
+    const last =
+      m.family_name ||
+      (m.full_name ? m.full_name.split(" ").slice(1).join(" ") : "") ||
+      "";
+    return { first_name: first, last_name: last, email: user.email || "" };
+  }, [user]);
+
+  // încarcă profilul (Supabase → fallback local)
+  const loadProfile = useCallback(async () => {
+    setLoading(true);
+    try {
+      if (user) {
+        const { data, error } = await supabase
+          .from("teacher_profiles")
+          .select("*")
+          .eq("id", user.id)
+          .maybeSingle();
+        if (error) throw error;
+        if (data) {
+          setForm({
+            first_name: data.first_name || "",
+            last_name: data.last_name || "",
+            birth_date: data.birth_date || "",
+            email: data.email || user.email || "",
+            phone: data.phone || "",
+            county: data.county || "",
+            city: data.city || "",
+            school: data.school || "",
+            username: data.username || "",
+          });
+          setLoading(false);
+          return;
+        }
+      }
+      const cached = ls.get("profil_profesor", {});
+      setForm({ ...empty, ...defaultsFromAuth, ...cached });
+    } catch {
+      const cached = ls.get("profil_profesor", {});
+      setForm({ ...empty, ...defaultsFromAuth, ...cached });
+    } finally {
+      setLoading(false);
+    }
+  }, [supabase, user, defaultsFromAuth]);
 
   useEffect(() => {
-    const dateSalvate = JSON.parse(localStorage.getItem("profil_profesor") || "{}");
-    if (Object.keys(dateSalvate).length > 0) {
-      setProfil(dateSalvate);
-    }
-  }, []);
+    loadProfile();
+  }, [loadProfile]);
 
-  const handleChange = (e) => {
+  // auto-hide toast
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 2600);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  const onChange = (e) => {
     const { name, value } = e.target;
-    setProfil((prev) => ({ ...prev, [name]: value }));
-    setSalvat(false);
+    setForm((p) => ({ ...p, [name]: value }));
   };
 
-  const salveazaProfil = () => {
-    localStorage.setItem("profil_profesor", JSON.stringify(profil));
-    setSalvat(true);
+  const saveProfile = async () => {
+    if (!user) {
+      ls.set("profil_profesor", form);
+      setToast({
+        type: "info",
+        message: "Profil salvat local (neautentificat).",
+      });
+      return;
+    }
+    try {
+      setSaving(true);
+      const payload = {
+        id: user.id, // PK = auth.uid()
+        first_name: form.first_name?.trim() || null,
+        last_name: form.last_name?.trim() || null,
+        birth_date: form.birth_date || null,
+        email: user.email || form.email || null, // preferă emailul din Auth
+        phone: form.phone?.trim() || null,
+        county: form.county?.trim() || null,
+        city: form.city?.trim() || null,
+        school: form.school?.trim() || null,
+        username: form.username?.trim() || null,
+      };
+
+      const { error } = await supabase
+        .from("teacher_profiles")
+        .upsert(payload, { onConflict: "id" });
+
+      if (error) throw error;
+
+      // cache local pentru offline
+      ls.set("profil_profesor", { ...form, email: payload.email });
+      setToast({ type: "success", message: "Profil salvat cu succes." });
+    } catch (e) {
+      console.error("saveProfile error:", e);
+      ls.set("profil_profesor", form);
+      setToast({
+        type: "error",
+        message: "Nu am putut salva. Datele au fost salvate local.",
+      });
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
-    <div className="min-h-screen -50 p-6">
-      <div className="max-w-2xl mx-auto bg-white shadow p-6 rounded-xl">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold text-indigo-700">👤 Profil Profesor</h1>
-          <Link to="/profesor/dashboard" className="text-blue-600 hover:underline text-sm">
-            ← Înapoi la Dashboard
+    <div className="min-h-[100dvh] bg-[radial-gradient(1200px_600px_at_50%_-200px,rgba(79,70,229,0.08),transparent)]">
+      <div className="mx-auto max-w-4xl p-4 sm:p-6 lg:p-8 space-y-6">
+        {/* Înapoi la Dashboard (centru) */}
+        <div className="flex justify-center">
+          <Link
+            to="/profesor/dashboard"
+            className="inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm hover:bg-white bg-white/80 backdrop-blur shadow"
+          >
+            ⟵ Înapoi la Dashboard
           </Link>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <input type="text" name="prenume" value={profil.prenume} onChange={handleChange} placeholder="Prenume" className="border p-2 rounded" />
-          <input type="text" name="nume" value={profil.nume} onChange={handleChange} placeholder="Nume" className="border p-2 rounded" />
-          <input type="date" name="dataNasterii" value={profil.dataNasterii} onChange={handleChange} className="border p-2 rounded" />
-          <input type="email" name="email" value={profil.email} onChange={handleChange} placeholder="Email" className="border p-2 rounded" />
-          <input type="tel" name="telefon" value={profil.telefon} onChange={handleChange} placeholder="Telefon" className="border p-2 rounded" />
-          <input type="text" name="judet" value={profil.judet} onChange={handleChange} placeholder="Județ" className="border p-2 rounded" />
-          <input type="text" name="oras" value={profil.oras} onChange={handleChange} placeholder="Oraș" className="border p-2 rounded" />
-          <input type="text" name="scoala" value={profil.scoala} onChange={handleChange} placeholder="Școală" className="border p-2 rounded" />
-          <input type="text" name="username" value={profil.username} onChange={handleChange} placeholder="Username" className="border p-2 rounded sm:col-span-2" />
+        <div className="rounded-3xl border border-indigo-100 bg-white/90 backdrop-blur p-6 shadow-xl">
+          <div className="flex items-start justify-between">
+            <div>
+              <h1 className="text-2xl font-extrabold text-indigo-900">
+                👤 Profil profesor
+              </h1>
+              <p className="text-sm text-gray-600">
+                Completează/actualizează datele tale.
+              </p>
+            </div>
+            {user && (
+              <span className="rounded-full border px-3 py-1 text-[11px] text-gray-600 bg-gray-50">
+                ID: {user.id.slice(0, 8)}…
+              </span>
+            )}
+          </div>
+
+          {loading ? (
+            <div className="mt-6 text-sm text-gray-500">Se încarcă…</div>
+          ) : (
+            <>
+              <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <input
+                  className="border px-3 py-2 rounded-xl"
+                  name="first_name"
+                  value={form.first_name}
+                  onChange={onChange}
+                  placeholder="Prenume"
+                />
+                <input
+                  className="border px-3 py-2 rounded-xl"
+                  name="last_name"
+                  value={form.last_name}
+                  onChange={onChange}
+                  placeholder="Nume"
+                />
+                <input
+                  className="border px-3 py-2 rounded-xl"
+                  type="date"
+                  name="birth_date"
+                  value={form.birth_date || ""}
+                  onChange={onChange}
+                />
+                <input
+                  className="border px-3 py-2 rounded-xl"
+                  type="email"
+                  name="email"
+                  value={form.email}
+                  onChange={onChange}
+                  placeholder="Email"
+                  disabled
+                />
+                <input
+                  className="border px-3 py-2 rounded-xl"
+                  name="phone"
+                  value={form.phone}
+                  onChange={onChange}
+                  placeholder="Telefon"
+                />
+                <input
+                  className="border px-3 py-2 rounded-xl"
+                  name="county"
+                  value={form.county}
+                  onChange={onChange}
+                  placeholder="Județ"
+                />
+                <input
+                  className="border px-3 py-2 rounded-xl"
+                  name="city"
+                  value={form.city}
+                  onChange={onChange}
+                  placeholder="Oraș"
+                />
+                <input
+                  className="border px-3 py-2 rounded-xl"
+                  name="school"
+                  value={form.school}
+                  onChange={onChange}
+                  placeholder="Școala"
+                />
+                <input
+                  className="border px-3 py-2 rounded-xl sm:col-span-2"
+                  name="username"
+                  value={form.username}
+                  onChange={onChange}
+                  placeholder="Username"
+                />
+              </div>
+
+              <div className="mt-6 flex justify-end">
+                <button
+                  onClick={saveProfile}
+                  className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 shadow disabled:opacity-60"
+                  disabled={saving}
+                >
+                  {saving ? "Se salvează…" : "💾 Salvează profilul"}
+                </button>
+              </div>
+            </>
+          )}
         </div>
 
-        <button onClick={salveazaProfil} className="mt-4 w-full bg-indigo-600 text-white py-2 rounded hover:bg-indigo-700">
-          💾 Salvează profilul
-        </button>
-
-        {salvat && (
-          <div className="mt-4 text-green-600 text-sm text-center font-medium">
-            ✔️ Profil salvat cu succes!
+        {toast && (
+          <div
+            className={
+              "mx-auto max-w-lg text-center rounded-2xl p-3 text-sm " +
+              (toast.type === "success"
+                ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                : toast.type === "error"
+                ? "bg-red-100 text-red-800 border border-red-300"
+                : "bg-blue-100 text-blue-800 border border-blue-300")
+            }
+          >
+            {toast.message}
           </div>
         )}
       </div>
     </div>
   );
-};
-
-export default ProfilProfesor;
+}
