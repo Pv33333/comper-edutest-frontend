@@ -1,4 +1,3 @@
-
 import React from "react";
 import { Link, useNavigate } from "react-router-dom";
 
@@ -12,9 +11,12 @@ const DashboardProfesor = () => {
   };
 
   return (
-    <div className="bg-gray-50 text-blue-900 font-sans">
-      <div id="header-container" />
-      <div className="col-span-full flex justify-center gap-6 mb-4 mt-10">
+    <div className="min-h-screen w-full text-blue-900 font-sans bg-gradient-to-b from-indigo-50 via-white to-white">
+      {/* header-ul e direct pe gradient */}
+      <div id="header-container" className="w-full h-0" />
+
+      {/* butoane încadrate simetric între header și carduri */}
+      <div className="col-span-full flex justify-center gap-6 py-10">
         <Link
           to="/homepage"
           className="bg-white text-blue-700 font-semibold text-sm px-5 py-2 rounded-xl border border-blue-300 hover:bg-blue-50 shadow-sm transition flex items-center gap-2"
@@ -34,8 +36,12 @@ const DashboardProfesor = () => {
           to="/profesor/calendar"
           className="block p-6 bg-gradient-to-br from-purple-100 to-purple-200 rounded-2xl shadow-xl hover:scale-[1.02] transition text-center"
         >
-          <h2 className="text-2xl font-semibold text-gray-800">📅 Calendar activitate</h2>
-          <p className="text-base text-gray-700">Testări programate și activități viitoare.</p>
+          <h2 className="text-2xl font-semibold text-gray-800">
+            📅 Calendar activitate
+          </h2>
+          <p className="text-base text-gray-700">
+            Testări programate și activități viitoare.
+          </p>
         </Link>
       </div>
 
@@ -45,11 +51,33 @@ const DashboardProfesor = () => {
 
       <div className="max-w-6xl mx-auto px-6 py-12 grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
         <div className="flex flex-col gap-6">
-          <LinkCard to="/profesor/profil" title="👤 Profilul meu" desc="Datele tale ca profesor." />
-          <LinkCard to="/profesor/creare-test" title="📝 Creează un test" desc="Inițiază un test nou pentru elevi sau platformă." color="green" />
-          <LinkCard to="/profesor/teste-profesor" title="📂 Testele mele" desc="Gestionează testele deja construite." />
-          <LinkCard to="/profesor/teste-platforma" title="🌐 Teste Platformă" desc="Toate testele validate din platformă." />
-          <LinkCard to="/profesor/teste-comper" title="📚 Teste COMPER" desc="Accesează testele oficiale Comper pentru toate clasele." color="yellow" />
+          <LinkCard
+            to="/profesor/profil"
+            title="👤 Profilul meu"
+            desc="Datele tale ca profesor."
+          />
+          <LinkCard
+            to="/profesor/creare-test"
+            title="📝 Creează un test"
+            desc="Inițiază un test nou pentru elevi sau platformă."
+            color="green"
+          />
+          <LinkCard
+            to="/profesor/teste-profesor"
+            title="📂 Testele mele"
+            desc="Gestionează testele deja construite."
+          />
+          <LinkCard
+            to="/profesor/teste-platforma"
+            title="🌐 Teste Platformă"
+            desc="Toate testele validate din platformă."
+          />
+          <LinkCard
+            to="/profesor/teste-comper"
+            title="📚 Teste COMPER"
+            desc="Accesează testele oficiale Comper pentru toate clasele."
+            color="yellow"
+          />
         </div>
 
         <div className="text-center">
@@ -61,13 +89,33 @@ const DashboardProfesor = () => {
         </div>
 
         <div className="flex flex-col gap-6">
-          <LinkCard to="/profesor/rezultate" title="📈 Rezultate Elevi" desc="Selectează elevul și vezi scorurile individuale la teste." color="pink" />
-          <LinkCard to="/profesor/elevi" title="👥 Gestionează Elevi" desc="Adaugă, modifică și organizează elevii și clasele." />
-          <LinkCard to="/profesor/rapoarte" title="📊 Rapoarte testare" desc="Vizualizează rezultatele și analizează performanța." color="indigo" />
-          <LinkCard to="/profesor/adeverinta" title="📄 Adeverință" desc="Descarcă adeverința oficială în format PDF." color="lime" />
+          <LinkCard
+            to="/profesor/rezultate"
+            title="📈 Rezultate Elevi"
+            desc="Selectează elevul și vezi scorurile individuale la teste."
+            color="pink"
+          />
+          <LinkCard
+            to="/profesor/elevi"
+            title="👥 Gestionează Elevi"
+            desc="Adaugă, modifică și organizează elevii și clasele."
+          />
+          <LinkCard
+            to="/profesor/rapoarte"
+            title="📊 Rapoarte testare"
+            desc="Vizualizează rezultatele și analizează performanța."
+            color="indigo"
+          />
+          <LinkCard
+            to="/profesor/adeverinta"
+            title="📄 Adeverință"
+            desc="Descarcă adeverința oficială în format PDF."
+            color="lime"
+          />
         </div>
       </div>
-      <div id="footer-container" />
+
+      <div id="footer-container" className="w-full" />
     </div>
   );
 };

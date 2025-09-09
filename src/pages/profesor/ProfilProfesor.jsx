@@ -1,285 +1,294 @@
-// src/pages/profesor/ProfilProfesor.jsx
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useEffect, useRef, useState, useMemo } from "react";
+import { useSupabaseClient, useUser } from "@supabase/auth-helpers-react";
 import { Link } from "react-router-dom";
-import { useSession, useSupabaseClient } from "@supabase/auth-helpers-react";
-
-// util localStorage
-const ls = {
-  get(k, d) {
-    try {
-      return JSON.parse(localStorage.getItem(k) || JSON.stringify(d));
-    } catch {
-      return d;
-    }
-  },
-  set(k, v) {
-    localStorage.setItem(k, JSON.stringify(v));
-  },
-};
-
-const empty = {
-  first_name: "",
-  last_name: "",
-  birth_date: "",
-  email: "",
-  phone: "",
-  county: "",
-  city: "",
-  school: "",
-  username: "",
-};
 
 export default function ProfilProfesor() {
-  const session = useSession();
   const supabase = useSupabaseClient();
-  const user = session?.user || null;
+  const user = useUser();
 
-  const [form, setForm] = useState(empty);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [toast, setToast] = useState(null);
+  const [error, setError] = useState("");
+  const [ok, setOk] = useState("");
 
-  // valori implicite din înregistrare (Auth)
-  const defaultsFromAuth = useMemo(() => {
-    if (!user) return {};
-    const m = user.user_metadata || {};
-    const first =
-      m.given_name || (m.full_name ? m.full_name.split(" ")[0] : "") || "";
-    const last =
-      m.family_name ||
-      (m.full_name ? m.full_name.split(" ").slice(1).join(" ") : "") ||
-      "";
-    return { first_name: first, last_name: last, email: user.email || "" };
-  }, [user]);
+  const [form, setForm] = useState({
+    first_name: "",
+    last_name: "",
+    birth_date: "",
+    email: "",
+    phone: "",
+    username: "",
+    county: "",
+    city: "",
+    school: "",
+    avatar_url: "",
+  });
 
-  // încarcă profilul (Supabase → fallback local)
-  const loadProfile = useCallback(async () => {
-    setLoading(true);
-    try {
-      if (user) {
-        const { data, error } = await supabase
-          .from("teacher_profiles")
-          .select("*")
-          .eq("id", user.id)
-          .maybeSingle();
-        if (error) throw error;
-        if (data) {
-          setForm({
-            first_name: data.first_name || "",
-            last_name: data.last_name || "",
-            birth_date: data.birth_date || "",
-            email: data.email || user.email || "",
-            phone: data.phone || "",
-            county: data.county || "",
-            city: data.city || "",
-            school: data.school || "",
-            username: data.username || "",
-          });
-          setLoading(false);
-          return;
-        }
-      }
-      const cached = ls.get("profil_profesor", {});
-      setForm({ ...empty, ...defaultsFromAuth, ...cached });
-    } catch {
-      const cached = ls.get("profil_profesor", {});
-      setForm({ ...empty, ...defaultsFromAuth, ...cached });
-    } finally {
-      setLoading(false);
-    }
-  }, [supabase, user, defaultsFromAuth]);
-
-  useEffect(() => {
-    loadProfile();
-  }, [loadProfile]);
-
-  // auto-hide toast
-  useEffect(() => {
-    if (!toast) return;
-    const t = setTimeout(() => setToast(null), 2600);
-    return () => clearTimeout(t);
-  }, [toast]);
+  const fileRef = useRef(null);
 
   const onChange = (e) => {
     const { name, value } = e.target;
-    setForm((p) => ({ ...p, [name]: value }));
+    setForm((f) => ({ ...f, [name]: value }));
+  };
+
+  // Calculează progres completare
+  const progress = useMemo(() => {
+    const keys = [
+      "first_name",
+      "last_name",
+      "birth_date",
+      "email",
+      "phone",
+      "username",
+      "county",
+      "city",
+      "school",
+    ];
+    const filled = keys.filter((k) => form[k]?.trim()).length;
+    return Math.round((filled / keys.length) * 100);
+  }, [form]);
+
+  const loadProfile = async () => {
+    if (!user?.id) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setError("");
+    try {
+      const { data, error } = await supabase
+        .from("teacher_profiles")
+        .select(
+          "first_name,last_name,birth_date,email,phone,username,county,city,school,avatar_url"
+        )
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (error) throw error;
+      if (data) {
+        setForm((f) => ({
+          ...f,
+          ...data,
+          email: data.email ?? user.email ?? "",
+        }));
+      } else {
+        setForm((f) => ({
+          ...f,
+          email: user.email || "",
+          avatar_url: user?.user_metadata?.avatar_url || "",
+        }));
+      }
+    } catch (err) {
+      console.error(err);
+      setError("Nu am putut încărca datele profilului.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const saveProfile = async () => {
-    if (!user) {
-      ls.set("profil_profesor", form);
-      setToast({
-        type: "info",
-        message: "Profil salvat local (neautentificat).",
-      });
-      return;
-    }
+    setSaving(true);
+    setError("");
+    setOk("");
     try {
-      setSaving(true);
+      if (!user?.id) throw new Error("Nu ești autentificat.");
       const payload = {
-        id: user.id, // PK = auth.uid()
-        first_name: form.first_name?.trim() || null,
-        last_name: form.last_name?.trim() || null,
-        birth_date: form.birth_date || null,
-        email: user.email || form.email || null, // preferă emailul din Auth
-        phone: form.phone?.trim() || null,
-        county: form.county?.trim() || null,
-        city: form.city?.trim() || null,
-        school: form.school?.trim() || null,
-        username: form.username?.trim() || null,
+        id: user.id,
+        ...form,
+        updated_at: new Date().toISOString(),
       };
 
       const { error } = await supabase
         .from("teacher_profiles")
         .upsert(payload, { onConflict: "id" });
-
       if (error) throw error;
 
-      // cache local pentru offline
-      ls.set("profil_profesor", { ...form, email: payload.email });
-      setToast({ type: "success", message: "Profil salvat cu succes." });
-    } catch (e) {
-      console.error("saveProfile error:", e);
-      ls.set("profil_profesor", form);
-      setToast({
-        type: "error",
-        message: "Nu am putut salva. Datele au fost salvate local.",
-      });
+      setOk("Profil salvat cu succes.");
+    } catch (err) {
+      console.error(err);
+      setError("A apărut o eroare la salvare. Încearcă din nou.");
     } finally {
       setSaving(false);
+      setTimeout(() => setOk(""), 2500);
     }
   };
 
+  const onPickAvatar = () => fileRef.current?.click();
+
+  const onFileSelected = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !user?.id) return;
+
+    try {
+      const ext = file.name.split(".").pop();
+      const filePath = `${user.id}/${Date.now()}.${ext}`;
+      const { error: upErr } = await supabase.storage
+        .from("avatars")
+        .upload(filePath, file, {
+          cacheControl: "3600",
+          upsert: true,
+        });
+      if (upErr) throw upErr;
+
+      const { data: pub } = supabase.storage
+        .from("avatars")
+        .getPublicUrl(filePath);
+      const publicUrl = pub?.publicUrl;
+
+      setForm((f) => ({ ...f, avatar_url: publicUrl || "" }));
+
+      await supabase
+        .from("teacher_profiles")
+        .update({ avatar_url: publicUrl })
+        .eq("id", user.id);
+    } catch (err) {
+      console.error(err);
+      setError("Nu am putut încărca avatarul.");
+      setTimeout(() => setError(""), 2500);
+    } finally {
+      e.target.value = "";
+    }
+  };
+
+  useEffect(() => {
+    loadProfile();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
+
+  const initials = (() => {
+    const fn = (form.first_name || "").trim();
+    const ln = (form.last_name || "").trim();
+    return `${fn[0] || ""}${ln[0] || ""}`.toUpperCase() || "PR";
+  })();
+
   return (
-    <div className="min-h-[100dvh] bg-[radial-gradient(1200px_600px_at_50%_-200px,rgba(79,70,229,0.08),transparent)]">
-      <div className="mx-auto max-w-4xl p-4 sm:p-6 lg:p-8 space-y-6">
-        {/* Înapoi la Dashboard (centru) */}
-        <div className="flex justify-center">
-          <Link
-            to="/profesor/dashboard"
-            className="inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm hover:bg-white bg-white/80 backdrop-blur shadow"
-          >
-            ⟵ Înapoi la Dashboard
-          </Link>
-        </div>
-
-        <div className="rounded-3xl border border-indigo-100 bg-white/90 backdrop-blur p-6 shadow-xl">
-          <div className="flex items-start justify-between">
-            <div>
-              <h1 className="text-2xl font-extrabold text-indigo-900">
-                👤 Profil profesor
-              </h1>
-              <p className="text-sm text-gray-600">
-                Completează/actualizează datele tale.
-              </p>
-            </div>
-            {user && (
-              <span className="rounded-full border px-3 py-1 text-[11px] text-gray-600 bg-gray-50">
-                ID: {user.id.slice(0, 8)}…
-              </span>
-            )}
-          </div>
-
-          {loading ? (
-            <div className="mt-6 text-sm text-gray-500">Se încarcă…</div>
-          ) : (
-            <>
-              <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <input
-                  className="border px-3 py-2 rounded-xl"
-                  name="first_name"
-                  value={form.first_name}
-                  onChange={onChange}
-                  placeholder="Prenume"
-                />
-                <input
-                  className="border px-3 py-2 rounded-xl"
-                  name="last_name"
-                  value={form.last_name}
-                  onChange={onChange}
-                  placeholder="Nume"
-                />
-                <input
-                  className="border px-3 py-2 rounded-xl"
-                  type="date"
-                  name="birth_date"
-                  value={form.birth_date || ""}
-                  onChange={onChange}
-                />
-                <input
-                  className="border px-3 py-2 rounded-xl"
-                  type="email"
-                  name="email"
-                  value={form.email}
-                  onChange={onChange}
-                  placeholder="Email"
-                  disabled
-                />
-                <input
-                  className="border px-3 py-2 rounded-xl"
-                  name="phone"
-                  value={form.phone}
-                  onChange={onChange}
-                  placeholder="Telefon"
-                />
-                <input
-                  className="border px-3 py-2 rounded-xl"
-                  name="county"
-                  value={form.county}
-                  onChange={onChange}
-                  placeholder="Județ"
-                />
-                <input
-                  className="border px-3 py-2 rounded-xl"
-                  name="city"
-                  value={form.city}
-                  onChange={onChange}
-                  placeholder="Oraș"
-                />
-                <input
-                  className="border px-3 py-2 rounded-xl"
-                  name="school"
-                  value={form.school}
-                  onChange={onChange}
-                  placeholder="Școala"
-                />
-                <input
-                  className="border px-3 py-2 rounded-xl sm:col-span-2"
-                  name="username"
-                  value={form.username}
-                  onChange={onChange}
-                  placeholder="Username"
-                />
-              </div>
-
-              <div className="mt-6 flex justify-end">
-                <button
-                  onClick={saveProfile}
-                  className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 shadow disabled:opacity-60"
-                  disabled={saving}
-                >
-                  {saving ? "Se salvează…" : "💾 Salvează profilul"}
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-
-        {toast && (
-          <div
-            className={
-              "mx-auto max-w-lg text-center rounded-2xl p-3 text-sm " +
-              (toast.type === "success"
-                ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
-                : toast.type === "error"
-                ? "bg-red-100 text-red-800 border border-red-300"
-                : "bg-blue-100 text-blue-800 border border-blue-300")
-            }
-          >
-            {toast.message}
-          </div>
-        )}
+    <div className="min-h-screen w-full text-gray-800 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-50 via-white to-white">
+      {/* Înapoi la Dashboard */}
+      <div className="flex justify-center pt-10 pb-6">
+        <Link
+          to="/profesor/dashboard"
+          className="inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm hover:bg-white bg-white/80 backdrop-blur shadow"
+        >
+          ⟵ Înapoi la Dashboard
+        </Link>
       </div>
+
+      <main className="max-w-4xl mx-auto px-4 pb-24">
+        <h1 className="text-3xl md:text-4xl font-extrabold text-center text-indigo-900 mb-6">
+          👤 Profil profesor
+        </h1>
+
+        {/* Card header cu avatar premium */}
+        <div className="bg-white/90 backdrop-blur border border-gray-200 rounded-2xl p-5 shadow-md">
+          <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4">
+            <div className="relative">
+              {form.avatar_url ? (
+                <img
+                  src={form.avatar_url}
+                  alt="Avatar profesor"
+                  className="h-24 w-24 rounded-2xl object-cover border shadow"
+                  onError={(e) => (e.currentTarget.style.display = "none")}
+                />
+              ) : (
+                <div className="h-24 w-24 rounded-2xl bg-indigo-100 text-indigo-800 flex items-center justify-center font-bold text-2xl border shadow">
+                  {initials}
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={onPickAvatar}
+                className="absolute -bottom-2 -right-2 rounded-xl border bg-white px-3 py-1 text-xs shadow hover:bg-gray-50"
+              >
+                Schimbă
+              </button>
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={onFileSelected}
+              />
+            </div>
+
+            <div className="flex-1 text-center sm:text-left">
+              <div className="text-xl font-semibold text-indigo-900">
+                {(form.first_name || "—") + " " + (form.last_name || "")}
+              </div>
+              <div className="text-sm text-gray-600">
+                {form.email || user?.email || "—"}
+              </div>
+
+              {/* Bara de progres */}
+              <div className="mt-3 w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-indigo-600 transition-all duration-500"
+                  style={{ width: `${saving ? 100 : progress}%` }}
+                ></div>
+              </div>
+              <div className="text-xs text-gray-500 mt-1">
+                {saving ? "Se salvează..." : `Completat ${progress}%`}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Formular */}
+        <div className="mt-6 bg-white/90 backdrop-blur border border-gray-200 rounded-2xl p-5 shadow-md">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {[
+              { id: "first_name", label: "Prenume", type: "text" },
+              { id: "last_name", label: "Nume", type: "text" },
+              { id: "birth_date", label: "Data nașterii", type: "date" },
+              { id: "email", label: "Email", type: "email" },
+              { id: "phone", label: "Telefon", type: "tel" },
+              { id: "username", label: "Username", type: "text" },
+              { id: "county", label: "Județ", type: "text" },
+              { id: "city", label: "Oraș", type: "text" },
+              { id: "school", label: "Școala", type: "text", full: true },
+            ].map((field) => (
+              <div key={field.id} className={field.full ? "md:col-span-2" : ""}>
+                <label
+                  htmlFor={field.id}
+                  className="text-xs text-gray-600 block mb-1"
+                >
+                  {field.label}
+                </label>
+                <input
+                  id={field.id}
+                  name={field.id}
+                  type={field.type}
+                  value={form[field.id] || ""}
+                  onChange={onChange}
+                  placeholder={field.label}
+                  className="w-full border px-3 py-2.5 rounded-xl bg-white/80"
+                />
+              </div>
+            ))}
+          </div>
+
+          {/* Actions */}
+          <div className="flex justify-end gap-2 mt-6">
+            <button
+              className="rounded-xl border px-4 py-2 text-sm bg-white hover:bg-gray-50"
+              onClick={loadProfile}
+              disabled={loading}
+            >
+              Reîncarcă
+            </button>
+            <button
+              className={`rounded-xl px-4 py-2 text-sm text-white shadow ${
+                saving
+                  ? "bg-indigo-400 cursor-not-allowed"
+                  : "bg-indigo-600 hover:bg-indigo-700"
+              }`}
+              onClick={saveProfile}
+              disabled={saving}
+            >
+              {saving ? "Se salvează…" : "Salvează profilul"}
+            </button>
+          </div>
+        </div>
+      </main>
     </div>
   );
 }

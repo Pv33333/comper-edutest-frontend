@@ -1,224 +1,280 @@
-// src/pages/profesor/RezultateElevi.jsx (Supabase direct – results_enriched cu titlu şi materie)
-import React, { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
+// src/pages/profesor/RezultateElevi.jsx
+import React, { useEffect, useMemo, useState } from "react";
+import { useSupabaseClient, useSession } from "@supabase/auth-helpers-react";
+import { Link } from "react-router-dom";
 
-const fmtDurata = (totalSec) => {
-  if (totalSec == null) return "—";
-  const s = Number(totalSec) || 0;
-  const m = Math.floor(s / 60);
-  const r = s % 60;
-  return m > 0 ? `${m}m ${r}s` : `${r}s`;
-};
+function fmtDateTime(ts) {
+  if (!ts) return "—";
+  try {
+    return new Date(ts).toLocaleString("ro-RO", {
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
+  } catch {
+    return String(ts);
+  }
+}
 
-const RezultateElevi = () => {
-  const [elevi, setElevi] = useState([]);
-  const [selectedElev, setSelectedElev] = useState("");
-  const [teste, setTeste] = useState([]);
-  const [loadingElevi, setLoadingElevi] = useState(true);
-  const [loadingTeste, setLoadingTeste] = useState(false);
-  const [err, setErr] = useState("");
+export default function RezultateElevi() {
+  const supabase = useSupabaseClient();
+  const session = useSession();
+
+  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState([]); // rezultate îmbogățite
+  const [q, setQ] = useState("");
 
   useEffect(() => {
-    let cancelled = false;
     (async () => {
-      setLoadingElevi(true);
-      setErr("");
-      try {
-        const { data: authData, error: authErr } =
-          await supabase.auth.getUser();
-        if (authErr) throw authErr;
-        const user = authData?.user;
-        if (!user) throw new Error("Neautentificat");
+      setLoading(true);
 
-        const { data, error } = await supabase
-          .from("results_enriched")
-          .select("student_id, student_name, student_email")
-          .order("student_name", { ascending: true });
-        if (error) throw error;
-
-        const seen = new Set();
-        const uniq = [];
-        for (const r of data || []) {
-          if (!seen.has(r.student_id)) {
-            seen.add(r.student_id);
-            uniq.push({
-              id: r.student_id,
-              full_name: r.student_name,
-              email: r.student_email,
-            });
-          }
-        }
-        if (!cancelled) setElevi(uniq);
-      } catch (e) {
-        console.error(e);
-        if (!cancelled) setErr(e?.message || "Eroare la încărcarea elevilor.");
-      } finally {
-        if (!cancelled) setLoadingElevi(false);
+      const userId = session?.user?.id;
+      if (!userId) {
+        setRows([]);
+        setLoading(false);
+        return;
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setTeste([]);
-      if (!selectedElev) return;
-      setLoadingTeste(true);
-      setErr("");
-      try {
-        const { data: rows, error } = await supabase
-          .from("results_enriched")
+      // 1) testele create de profesorul curent (meta pentru rezultat)
+      const { data: tests } = await supabase
+        .from("tests")
+        .select(
+          "id, subject, test_type, school_class, exam_date, exam_time, teacher_name, description, status, created_by"
+        )
+        .eq("created_by", userId);
+
+      const testById = new Map((tests || []).map((t) => [t.id, t]));
+      const testIds = new Set((tests || []).map((t) => t.id));
+
+      // 2) rezultate elevi (cu nume+email). Încercăm view-ul results_with_profiles; dacă nu există, facem fallback.
+      let res = [];
+      let usedView = false;
+
+      const tryView = await supabase
+        .from("results_with_profiles")
+        .select(
+          "id, test_id, student_id, score, duration_sec, submitted_at, student_name, student_email, answers"
+        );
+      if (!tryView.error && Array.isArray(tryView.data)) {
+        usedView = true;
+        res = tryView.data || [];
+      }
+
+      if (!usedView) {
+        // fallback: results + profiles/student_profiles/students
+        const { data: raw } = await supabase
+          .from("results")
           .select(
-            "id, test_id, student_id, score, duration_sec, submitted_at, student_name, student_email, answers, test_title, test_subject"
-          )
-          .eq("student_id", selectedElev)
-          .order("submitted_at", { ascending: false });
-        if (error) throw error;
-        if (!cancelled) setTeste(rows || []);
-      } catch (e) {
-        console.error(e);
-        if (!cancelled)
-          setErr(e?.message || "Eroare la încărcarea rezultatelor.");
-      } finally {
-        if (!cancelled) setLoadingTeste(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedElev]);
+            "id, test_id, student_id, score, duration_sec, submitted_at, answers"
+          );
 
-  const selectRaport = (testID, elevID) => {
-    sessionStorage.setItem("raport_selectat_testID", testID);
-    sessionStorage.setItem("raport_selectat_elevID", elevID);
-  };
+        const sids = Array.from(
+          new Set((raw || []).map((r) => r.student_id).filter(Boolean))
+        );
+        const [p1, p2, p3] = await Promise.all([
+          supabase
+            .from("profiles")
+            .select("id, full_name, email")
+            .in("id", sids),
+          supabase
+            .from("student_profiles")
+            .select("id, full_name, email")
+            .in("id", sids),
+          supabase.from("students").select("id, name, email").in("id", sids),
+        ]);
+
+        const profMap = new Map(
+          (p1.data || []).map((x) => [
+            x.id,
+            { name: x.full_name, email: x.email },
+          ])
+        );
+        const studProfMap = new Map(
+          (p2.data || []).map((x) => [
+            x.id,
+            { name: x.full_name, email: x.email },
+          ])
+        );
+        const studMap = new Map(
+          (p3.data || []).map((x) => [x.id, { name: x.name, email: x.email }])
+        );
+
+        res = (raw || []).map((r) => {
+          const f =
+            profMap.get(r.student_id) ||
+            studProfMap.get(r.student_id) ||
+            studMap.get(r.student_id) ||
+            {};
+          return {
+            ...r,
+            student_name: f.name || "—",
+            student_email: f.email || "—",
+          };
+        });
+      }
+
+      // 3) păstrăm DOAR rezultatele pentru testele profesorului curent
+      const mine = (res || []).filter((r) => testIds.has(r.test_id));
+
+      // 4) îmbogățim rândurile cu meta test pentru card
+      const enriched = mine.map((r) => {
+        const t = testById.get(r.test_id) || {};
+        const test_name =
+          t.description?.trim() ||
+          [t.subject, t.test_type].filter(Boolean).join(" • ") ||
+          "Test";
+        return {
+          ...r,
+          test_name,
+          test_subject: t.subject || "—",
+          test_type: t.test_type || "—",
+          school_class: t.school_class || "—",
+          exam_date: t.exam_date || null,
+          exam_time: t.exam_time || null,
+          teacher_name: t.teacher_name || "—",
+          test_status: t.status || null,
+        };
+      });
+
+      // ordonăm desc după data trimiterii
+      enriched.sort((a, b) => (a.submitted_at < b.submitted_at ? 1 : -1));
+
+      setRows(enriched);
+      setLoading(false);
+    })();
+  }, [session?.user?.id, supabase]);
+
+  const filtered = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    if (!needle) return rows;
+    return rows.filter((r) => {
+      const hay = [
+        r.student_name,
+        r.student_email,
+        r.test_name,
+        r.test_subject,
+        r.test_type,
+        r.school_class,
+        r.teacher_name,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return hay.includes(needle);
+    });
+  }, [rows, q]);
 
   return (
-    <div className="text-blue-900 font-sans min-h-screen flex flex-col">
-      <section className="max-w-6xl mx-auto mt-10 mb-8 px-4">
-        <a
-          className="flex items-center justify-center gap-2 text-base sm:text-lg text-blue-700 hover:text-blue-900 transition font-medium"
-          href="/profesor/dashboard"
-        >
-          <svg
-            className="w-5 h-5 sm:w-6 sm:h-6"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            viewBox="0 0 24 24"
+    <div className="min-h-[100dvh] bg-gradient-to-b from-indigo-50 via-white to-white">
+      <div className="max-w-6xl mx-auto p-6 space-y-6">
+        {/* back top center */}
+        <div className="flex justify-center">
+          <Link
+            to="/profesor/dashboard"
+            className="inline-flex items-center gap-2 rounded-full border px-5 py-2 text-sm hover:bg-white bg-white/70 backdrop-blur shadow"
           >
-            <path
-              d="M15 19l-7-7 7-7"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+            ⟵ Înapoi la Dashboard
+          </Link>
+        </div>
+
+        {/* header */}
+        <div className="text-center">
+          <h1 className="text-3xl font-extrabold text-indigo-900">
+            Rezultate elevi
+          </h1>
+          <p className="mt-1 text-sm text-gray-600">
+            Nume elev, clasa, scor, data & ora, numele testului, profesor.
+          </p>
+          <div className="mt-3 mx-auto max-w-3xl">
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Caută după elev, email, test, profesor, clasa…"
+              className="w-full rounded-xl border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-200"
             />
-          </svg>
-          Înapoi la Dashboard
-        </a>
-      </section>
+          </div>
+        </div>
 
-      <main className="max-w-5xl mx-auto px-6 py-10 space-y-8 flex-grow">
-        <h1 className="text-4xl font-bold text-center">👥 Rezultate Elevi</h1>
+        {/* listă rezultate */}
+        {loading ? (
+          <div className="text-center text-sm text-gray-600">Se încarcă…</div>
+        ) : filtered.length === 0 ? (
+          <div className="text-center text-gray-600 text-sm">
+            Nu există rezultate.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {filtered.map((r) => (
+              <div
+                key={r.id}
+                className="group rounded-2xl border border-indigo-100 bg-white/90 backdrop-blur p-4 shadow hover:shadow-xl hover:-translate-y-0.5 transition"
+              >
+                {/* header: elev + scor */}
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold text-indigo-900 truncate">
+                      {r.student_name || "—"}
+                    </div>
+                    <div className="text-xs text-gray-600 truncate">
+                      {r.student_email || "—"}
+                    </div>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <div className="text-xs text-gray-500">Scor</div>
+                    <div className="text-base font-bold text-indigo-700">
+                      {r.score ?? "—"}
+                    </div>
+                  </div>
+                </div>
 
-        {err && (
-          <div className="max-w-3xl mx-auto p-4 rounded-lg border border-yellow-300 bg-yellow-50 text-yellow-800">
-            {err}
+                {/* chips: nume test + clasa */}
+                <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5">
+                    🧪 {r.test_name}
+                  </span>
+                  <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 text-sky-700 border border-sky-200 px-2 py-0.5">
+                    🏫 {r.school_class}
+                  </span>
+                </div>
+
+                {/* meta: data/ora, profesor */}
+                <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                  <div className="rounded-xl border p-2">
+                    <div className="text-[10px] text-gray-500">🗓 Trimis la</div>
+                    <div className="font-medium truncate">
+                      {fmtDateTime(r.submitted_at)}
+                    </div>
+                  </div>
+                  <div className="rounded-xl border p-2">
+                    <div className="text-[10px] text-gray-500">👤 Profesor</div>
+                    <div className="font-medium truncate">
+                      {r.teacher_name || "—"}
+                    </div>
+                  </div>
+                </div>
+
+                {/* info subtile */}
+                <div className="mt-2 text-[11px] text-gray-600">
+                  {r.test_subject ? `📘 ${r.test_subject}` : ""}{" "}
+                  {r.test_type ? ` · 🏷 ${r.test_type}` : ""}
+                </div>
+
+                {/* >>> BUTON DETALII ⇩⇩⇩ */}
+                <div className="mt-3">
+                  <Link
+                    to={`/profesor/rapoarte?result=${encodeURIComponent(r.id)}`}
+                    className="inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs hover:bg-white bg-white/70 backdrop-blur"
+                    aria-label="Vezi detalii rezultat în rapoarte de testare"
+                    title="Vezi detalii"
+                  >
+                    🔍 Detalii
+                  </Link>
+                </div>
+                {/* <<< BUTON DETALII */}
+              </div>
+            ))}
           </div>
         )}
-
-        <div className="text-center">
-          <label
-            className="text-lg font-medium mb-2 block"
-            htmlFor="elevSelect"
-          >
-            Selectează un elev:
-          </label>
-          {loadingElevi ? (
-            <div className="text-gray-500">Se încarcă elevii…</div>
-          ) : (
-            <select
-              id="elevSelect"
-              className="w-full max-w-md mx-auto block border border-gray-300 rounded-lg px-4 py-2 text-sm"
-              value={selectedElev}
-              onChange={(e) => setSelectedElev(e.target.value)}
-            >
-              <option value="">-- Selectează elevul --</option>
-              {elevi.map((e) => (
-                <option key={e.id} value={e.id}>
-                  {e.full_name || e.id} ({e.email || "—"})
-                </option>
-              ))}
-            </select>
-          )}
-        </div>
-
-        <div className="space-y-4">
-          {loadingTeste && (
-            <p className="text-center text-gray-500">Se încarcă rezultatele…</p>
-          )}
-
-          {selectedElev && !loadingTeste && teste.length === 0 && !err && (
-            <p className="text-center text-gray-500">
-              Nicio testare găsită pentru acest elev.
-            </p>
-          )}
-
-          {teste.map((row) => {
-            const title = row.test_title || "Test fără titlu";
-            const subtitle = row.test_subject || null;
-
-            return (
-              <div
-                key={row.id}
-                className="bg-white rounded-xl shadow p-5 border border-gray-200"
-              >
-                <h3 className="text-xl font-semibold text-blue-800 mb-2 flex items-center justify-between">
-                  <span title={title} className="truncate">
-                    🧪 {title}
-                  </span>
-                  {subtitle && (
-                    <span className="ml-2 text-xs font-medium px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700">
-                      {subtitle}
-                    </span>
-                  )}
-                </h3>
-                <p className="text-sm text-gray-700 mb-1">
-                  Elev: <strong>{row.student_name || row.student_id}</strong> (
-                  {row.student_email || "—"})
-                </p>
-                <p className="text-sm text-gray-700 mb-1">
-                  Scor: <strong>{row.score != null ? row.score : "—"}</strong>
-                </p>
-                <p className="text-sm text-gray-700 mb-1">
-                  Durată: {fmtDurata(row.duration_sec)}
-                </p>
-                <p className="text-sm text-gray-700 mb-3">
-                  Trimis la:{" "}
-                  {row.submitted_at
-                    ? new Intl.DateTimeFormat("ro-RO", {
-                        timeZone: "Europe/Bucharest",
-                        dateStyle: "short",
-                        timeStyle: "short",
-                      }).format(new Date(row.submitted_at))
-                    : "—"}
-                </p>
-                <a
-                  href="/profesor/raport-detaliat"
-                  onClick={() => selectRaport(row.test_id, row.student_id)}
-                  className="text-blue-600 hover:underline text-sm"
-                >
-                  Vezi detalii test
-                </a>
-              </div>
-            );
-          })}
-        </div>
-      </main>
+      </div>
     </div>
   );
-};
-
-export default RezultateElevi;
+}

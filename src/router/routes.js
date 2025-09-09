@@ -76,7 +76,6 @@ const RezultateElevi = lazy(() =>
 const RapoarteTestare = lazy(() =>
   import("@/pages/profesor/RapoarteTestare.jsx")
 );
-// ✅ pagina corectă (DB)
 const RaportDetaliat = lazy(() =>
   import("@/pages/profesor/RaportDetaliat.jsx")
 );
@@ -123,6 +122,8 @@ const ProfilElev = lazy(() => import("@/pages/elev/ProfilElev.jsx"));
 const ParinteSincronizatElev = lazy(() =>
   import("@/pages/elev/ParinteSincronizatElev.jsx")
 );
+// 👇 pagina pentru „începe testul”
+const RezolvaTest = lazy(() => import("@/pages/elev/RezolvaTest.jsx"));
 
 /* ====================== Părinte ====================== */
 const DashboardParinte = lazy(() =>
@@ -288,6 +289,8 @@ export const routes = [
     el: TestePrimiteElev,
     meta: { layout: "site" },
   },
+  // ⇩ ruta pentru „Începe testul” (navigate('/elev/teste/incepe?sid=...'))
+  { path: "/elev/teste/incepe", el: RezolvaTest, meta: { layout: "site" } },
   { path: "/elev/rapoarte", el: RapoarteElev, meta: { layout: "site" } },
   {
     path: "/elev/felicitare-premium",
