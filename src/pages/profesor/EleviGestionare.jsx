@@ -250,20 +250,32 @@ export default function EleviGestionare() {
       studentId = existing?.id || null;
     }
     if (!studentId) {
-      const { data, error: e1 } = await supabase
-        .from("students")
-        .insert({
-          id: crypto.randomUUID(),
-          name: studentName || null,
-          email,
-          created_by: owner,
-        })
+      // caută profilul după email
+      const { data: prof, error: eProf } = await supabase
+        .from("profiles")
         .select("id")
-        .single();
-      if (e1) return setToast({ type: "error", message: e1.message });
-      studentId = data.id;
-    }
+        .eq("email", email)
+        .maybeSingle();
 
+      if (eProf) return setToast({ type: "error", message: eProf.message });
+      if (!prof?.id) {
+        return setToast({
+          type: "error",
+          message: "Elevul nu are cont înregistrat (auth.users).",
+        });
+      }
+
+      studentId = prof.id; // ✅ folosim auth.users.id (via profiles.id)
+
+      const { error: e1 } = await supabase.from("students").insert({
+        id: studentId,
+        name: studentName || null,
+        email,
+        created_by: owner,
+      });
+
+      if (e1) return setToast({ type: "error", message: e1.message });
+    }
     const { error: e2 } = await supabase
       .from("class_enrollments")
       .insert({ class_id: classForStudent, student_id: studentId });
@@ -323,12 +335,10 @@ export default function EleviGestionare() {
       });
 
     const { data, error } = await supabase.rpc("schedule_test_safe", {
-      _test_id: testId,
-      _owner: owner,
-      _target_class: classId,
-      _target_student: null,
-      _scheduled_at: new Date().toISOString(),
+      p_class_id: classId,
+      p_test_id: testId,
     });
+
     if (error) {
       console.error("schedule_test_safe error", error);
       setToast({
@@ -339,8 +349,8 @@ export default function EleviGestionare() {
       setToast({
         type: data ? "success" : "info",
         message: data
-          ? "Test programat pentru clasă."
-          : "Deja era trimis clasei.",
+          ? "✅ Test trimis clasei."
+          : "ℹ️ Testul a fost deja trimis clasei.",
       });
     }
   };
@@ -360,13 +370,8 @@ export default function EleviGestionare() {
     const { data, error } = await supabase.rpc(
       "schedule_test_upsert_for_email",
       {
-        _test_id: testId,
-        _email: mail,
-        _owner: owner,
-        _class_id: isUUID(classId) ? classId : null,
-        _name: name || null,
-        _scheduled_at: new Date().toISOString(),
-        _new_attempt: false,
+        p_email: mail,
+        p_test_id: testId,
       }
     );
 
@@ -379,7 +384,9 @@ export default function EleviGestionare() {
     } else {
       setToast({
         type: data ? "success" : "info",
-        message: data ? "Test trimis elevului." : "Deja era trimis elevului.",
+        message: data
+          ? "✅ Test trimis elevului."
+          : "ℹ️ Testul a fost deja trimis acestui elev.",
       });
     }
   };
@@ -486,11 +493,8 @@ export default function EleviGestionare() {
                 const { data, error } = await supabase.rpc(
                   "schedule_test_safe",
                   {
-                    _test_id: testId,
-                    _owner: owner,
-                    _target_class: c.id,
-                    _target_student: null,
-                    _scheduled_at: new Date().toISOString(),
+                    p_class_id: c.id,
+                    p_test_id: testId,
                   }
                 );
                 if (error) failed++;
@@ -499,9 +503,13 @@ export default function EleviGestionare() {
               }
               setToast({
                 type: failed ? "error" : duplicate ? "info" : "success",
-                message: `Clase: ${created} create · ${duplicate} deja existau${
-                  failed ? ` · ${failed} erori` : ""
-                }.`,
+                message: created
+                  ? `✅ Test trimis tuturor claselor (${created} clase).`
+                  : duplicate
+                  ? "ℹ️ Test a fost deja trimis tuturor claselor."
+                  : failed
+                  ? "❌ Eroare la trimiterea testului către clase."
+                  : "ℹ️ Nicio modificare.",
               });
             }}
             onScrollToClasses={scrollToClasses}
@@ -509,9 +517,9 @@ export default function EleviGestionare() {
           />
         )}
 
-        {/* Toolbar sticky: Search + Stats + Quick actions */}
-        <div className="sticky top-3 z-10">
-          <div className="rounded-3xl border border-blue-200 bg-white/90 shadow-xl p-4 md:p-5 backdrop-blur">
+        {/* Toolbar normal: Search + Stats + Quick actions */}
+        <div className="mt-4">
+          <div className="rounded-3xl border border-blue-200 bg-white shadow p-4 md:p-5">
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div className="md:flex-1">
                 <label className="text-xs font-medium text-gray-600">

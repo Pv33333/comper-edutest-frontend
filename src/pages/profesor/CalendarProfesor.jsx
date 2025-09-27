@@ -1,453 +1,504 @@
-// CalendarProfesor.jsx – Premium (fără sticky), buton Înapoi centrat, gradient ca în profil
-import React, { useEffect, useMemo, useState } from "react";
-import { useSupabaseClient, useUser } from "@supabase/auth-helpers-react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "react-router-dom";
-import { motion } from "framer-motion";
-import { populateConfirmariElevi } from "../../utils/confirmari_elevi_test";
-import DateTimePicker from "../../components/DateTimePicker";
+import { supabase } from "@/lib/supabaseClient";
+import DateTimePicker from "@/components/DateTimePicker.jsx";
+import { Trash } from "lucide-react";
 
-const MATERII = ["Toate", "Română", "Matematică"];
-const CLASE = [
-  "Toate",
-  "Clasa Pregătitoare",
-  "Clasa I",
-  "Clasa a II-a",
-  "Clasa a III-a",
-  "Clasa a IV-a",
-  "Clasa a V-a",
-  "Clasa a VI-a",
-  "Clasa a VII-a",
-  "Clasa a VIII-a",
-];
+/* Utils */
+const weekdays = ["L", "Ma", "Mi", "J", "V", "S", "D"];
+const pad = (n) => (n < 10 ? `0${n}` : `${n}`);
+const getEventDate = (ev) =>
+  ev?.event_date ||
+  (ev?.scheduled_at
+    ? new Date(ev.scheduled_at).toISOString().slice(0, 10)
+    : null);
+const getEventTime = (ev) =>
+  ev?.event_time ||
+  (ev?.scheduled_at
+    ? `${pad(new Date(ev.scheduled_at).getHours())}:${pad(
+        new Date(ev.scheduled_at).getMinutes()
+      )}`
+    : null);
+const formatEventDateTime = (ev) => {
+  const d = getEventDate(ev);
+  const t = getEventTime(ev);
+  return String(d && t ? `${d} · ${t}` : d || t || "-");
+};
 
-const CalendarProfesor = () => {
-  const supabase = useSupabaseClient();
-  const user = useUser();
-
-  const [tests, setTests] = useState([]);
-  const [confirmari, setConfirmari] = useState([]);
+export default function CalendarProfesor() {
+  const [tab, setTab] = useState("calendar");
+  const [events, setEvents] = useState([]);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [defaultDate, setDefaultDate] = useState(null);
-  const [tab, setTab] = useState("lista"); // "lista" | "calendar"
-  const [search, setSearch] = useState("");
-  const [fMaterie, setFMaterie] = useState("Toate");
-  const [fClasa, setFClasa] = useState("Toate");
+  const [selectedEvent, setSelectedEvent] = useState(null);
+  const [defaultTab, setDefaultTab] = useState("save");
+  const [confirmations, setConfirmations] = useState([]);
 
-  const toKey = (y, m, d) => new Date(y, m, d).toLocaleDateString("en-CA");
-
-  const fetchEvents = async () => {
-    if (!user?.id) {
-      const local = JSON.parse(localStorage.getItem("tests_from_prof") || "[]");
-      setTests(local);
-      return;
-    }
+  /* Fetch events */
+  const fetchEvents = useCallback(async () => {
     const { data, error } = await supabase
       .from("calendar_events")
       .select("*")
-      .eq("created_by", user.id)
-      .order("event_date", { ascending: true })
-      .order("event_time", { ascending: true });
-    if (error) {
-      console.error("Fetch error:", error);
-      return;
-    }
-    setTests(data);
-    localStorage.setItem("tests_from_prof", JSON.stringify(data));
-  };
-
-  useEffect(() => {
-    populateConfirmariElevi();
-    try {
-      const c = JSON.parse(localStorage.getItem("confirmari_elevi") || "[]");
-      setConfirmari(c);
-    } catch {}
+      .order("scheduled_at", { ascending: true });
+    if (!error) setEvents(data || []);
   }, []);
-
   useEffect(() => {
     fetchEvents();
-  }, [user?.id]);
+  }, [fetchEvents]);
 
-  const filtered = useMemo(() => {
-    const needle = search.toLowerCase().trim();
-    return tests.filter((t) => {
-      const matchesSearch =
-        !needle ||
-        `${t.subject || ""} ${t.descriere || ""} ${t.clasa || ""} ${
-          t.event_date || ""
-        }`
-          .toLowerCase()
-          .includes(needle);
+  /* ✅ Fetch confirmations – include și cele cu created_by = null */
+  const fetchConfirmations = useCallback(async () => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return;
 
-      const matchesMaterie = fMaterie === "Toate" || t.subject === fMaterie;
-      const matchesClasa = fClasa === "Toate" || t.clasa === fClasa;
+    const { data, error } = await supabase
+      .from("assignments")
+      .select(
+        "id, status, students(name), classes(grade_level, letter), calendar_events(title)"
+      )
+      .or(`created_by.eq.${user.id},created_by.is.null`);
 
-      return matchesSearch && matchesMaterie && matchesClasa;
-    });
-  }, [tests, search, fMaterie, fClasa]);
-
-  const changeMonth = (offset) => {
-    const d = new Date(currentDate);
-    d.setMonth(d.getMonth() + offset);
-    setCurrentDate(d);
-  };
-
-  const colorByTip = (tip) => {
-    if (tip?.includes("Comper"))
-      return "bg-blue-100 text-blue-800 border-blue-200";
-    if (tip?.includes("Platformă"))
-      return "bg-green-100 text-green-800 border-green-200";
-    return "bg-purple-100 text-purple-800 border-purple-200";
-  };
-
-  const isToday = (dateKey) => {
-    const today = new Date();
-    const key = today.toLocaleDateString("en-CA");
-    return key === dateKey;
-  };
-
-  const weekdays = ["L", "M", "M", "J", "V", "S", "D"];
-
-  const renderCalendar = () => {
-    const y = currentDate.getFullYear();
-    const m = currentDate.getMonth();
-    const start = new Date(y, m, 1);
-    const end = new Date(y, m + 1, 0);
-    const startDay = (start.getDay() || 7) - 1; // luni = 0
-    const grid = [];
-
-    for (let i = 0; i < startDay; i++) grid.push(<div key={"e" + i}></div>);
-
-    for (let d = 1; d <= end.getDate(); d++) {
-      const key = toKey(y, m, d);
-      const dayTests = filtered.filter((t) => t.event_date === key);
-
-      grid.push(
-        <motion.div
-          key={key}
-          whileHover={{ scale: 1.02 }}
-          className={`relative group bg-white p-2 rounded-2xl border shadow-sm hover:shadow-md cursor-pointer ${
-            isToday(key) ? "ring-2 ring-indigo-400" : "border-gray-200"
-          }`}
-          onClick={() => {
-            setDefaultDate(key);
-            setPickerOpen(true);
-          }}
-        >
-          <div className="flex items-center justify-between">
-            <div className="font-semibold text-gray-800">{d}</div>
-            {isToday(key) && (
-              <span className="text-[10px] font-semibold text-indigo-700">
-                azi
-              </span>
-            )}
-          </div>
-
-          <div className="mt-2 space-y-1">
-            {dayTests.map((e, i) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, y: -4 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.18 }}
-                className={`border ${colorByTip(
-                  e.tip
-                )} rounded-lg px-2 py-1 text-[11px] leading-tight truncate relative`}
-              >
-                <span className="font-medium">{e.subject}</span>
-                <span className="opacity-70"> • {e.event_time}</span>
-
-                {/* Tooltip premium (group-hover) */}
-                <div className="pointer-events-none absolute left-0 top-full mt-1 hidden group-hover:block z-30 w-64">
-                  <div className="rounded-xl border bg-white/95 backdrop-blur shadow-xl p-3 text-[12px]">
-                    <div className="font-semibold text-gray-900 mb-1">
-                      {e.subject}
-                    </div>
-                    <div className="text-gray-600">{e.clasa || "—"}</div>
-                    <div className="text-gray-500">
-                      {e.event_date} {e.event_time}
-                    </div>
-                    {e.descriere && (
-                      <div className="mt-1 text-gray-700">{e.descriere}</div>
-                    )}
-                    <div className="mt-2 text-[11px] text-gray-500">
-                      Tip: {e.tip || "Profesor"} • Sursă: {e.source || "—"}
-                    </div>
-                  </div>
-                </div>
-              </motion.div>
-            ))}
-          </div>
-        </motion.div>
-      );
+    if (error) {
+      console.error("❌ Eroare confirmări:", error);
+      return;
     }
-    return grid;
+    console.log("📚 Confirmări primite:", data);
+    setConfirmations(data || []);
+  }, []);
+
+  /* Group confirmări */
+  const groupedConfirmations = useMemo(() => {
+    const map = {};
+    confirmations.forEach((c) => {
+      const testKey = c.calendar_events?.title || "Test";
+      if (!map[testKey]) map[testKey] = {};
+      const classLabel = c.classes
+        ? `Clasa ${c.classes.grade_level}${
+            c.classes.letter ? " " + c.classes.letter : ""
+          }`
+        : "—";
+      if (!map[testKey][classLabel]) map[testKey][classLabel] = [];
+      map[testKey][classLabel].push(c);
+    });
+    return map;
+  }, [confirmations]);
+
+  /* Confirmări actions */
+  const deleteConfirmation = async (id) => {
+    await supabase.from("assignments").delete().eq("id", id);
+    fetchConfirmations();
+  };
+
+  /* ✅ openSend: inserează assignments cu created_by + class_id și evită duplicatele */
+  const openSend = async (ev = null) => {
+    setSelectedEvent(ev);
+    setDefaultTab("send");
+    setPickerOpen(true);
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user || !ev?.id || !ev?.class_id) {
+      console.warn("❌ Profesorul nu e autentificat sau eveniment lipsă:", {
+        user,
+        ev,
+      });
+      return;
+    }
+
+    // elevii din clasă
+    const { data: students, error: stErr } = await supabase
+      .from("students")
+      .select("id")
+      .eq("class_id", ev.class_id);
+    if (stErr || !students?.length) return;
+
+    // assignments existente pt eveniment
+    const { data: existing, error: exErr } = await supabase
+      .from("assignments")
+      .select("student_id")
+      .eq("event_id", ev.id);
+    if (exErr) return;
+
+    const existingSet = new Set((existing || []).map((r) => r.student_id));
+    const rows = students
+      .filter((s) => !existingSet.has(s.id))
+      .map((s) => ({
+        student_id: s.id,
+        event_id: ev.id,
+        class_id: ev.class_id,
+        status: "pending",
+        created_by: user.id,
+      }));
+
+    if (rows.length) {
+      console.log("✅ Inserăm assignments:", rows);
+      await supabase.from("assignments").insert(rows);
+    }
+  };
+
+  /* Delete event + assignments asociate */
+  const deleteEvent = async (id) => {
+    await supabase.from("assignments").delete().eq("event_id", id);
+    await supabase.from("calendar_events").delete().eq("id", id);
+    fetchEvents();
+  };
+
+  /* Calendar grid */
+  const startOfMonth = new Date(
+    currentDate.getFullYear(),
+    currentDate.getMonth(),
+    1
+  );
+  const endOfMonth = new Date(
+    currentDate.getFullYear(),
+    currentDate.getMonth() + 1,
+    0
+  );
+  const daysInMonth = endOfMonth.getDate();
+  const firstDay = startOfMonth.getDay() || 7;
+  const weeks = useMemo(() => {
+    const rows = [];
+    const totalSlots = firstDay - 1 + daysInMonth;
+    const totalWeeks = Math.ceil(totalSlots / 7);
+    for (let w = 0; w < totalWeeks; w++) {
+      const row = [];
+      for (let d = 0; d < 7; d++) {
+        const dayNum = w * 7 + d - (firstDay - 2);
+        row.push(dayNum >= 1 && dayNum <= daysInMonth ? dayNum : null);
+      }
+      rows.push(row);
+    }
+    return rows;
+  }, [firstDay, daysInMonth]);
+
+  /* Modal helpers */
+  const openCreate = (isoDate = null) => {
+    setSelectedEvent(isoDate ? { event_date: isoDate } : null);
+    setDefaultTab("save");
+    setTimeout(() => setPickerOpen(true), 0);
+  };
+  const openEdit = (ev) => {
+    setSelectedEvent(ev);
+    setDefaultTab("save");
+    setPickerOpen(true);
   };
 
   return (
-    <div className="min-h-screen w-full bg-gradient-to-b from-indigo-50 via-white to-white text-gray-800 flex flex-col">
-      {/* Înapoi la Dashboard – centrat sus (ca în ProfilProfesor) */}
-      <div className="flex justify-center pt-10 pb-6">
-        <Link
-          to="/profesor/dashboard"
-          className="inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm hover:bg-white bg-white/80 backdrop-blur shadow"
-        >
-          ⟵ Înapoi la Dashboard
-        </Link>
-      </div>
-
-      <main className="max-w-6xl mx-auto w-full px-4 pb-24">
-        <motion.h1
-          initial={{ opacity: 0, y: 6 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="text-3xl md:text-4xl font-extrabold text-center text-indigo-900"
-        >
-          📅 Calendarul testelor
-        </motion.h1>
-
-        {/* Tabs (pills) */}
-        <div className="mt-6 flex justify-center">
-          <div className="inline-flex p-1 bg-white/70 backdrop-blur rounded-2xl border shadow-sm">
-            <button
-              className={`px-4 py-2 rounded-xl text-sm font-medium transition ${
-                tab === "lista"
-                  ? "bg-indigo-600 text-white shadow"
-                  : "text-gray-700 hover:bg-gray-50"
-              }`}
-              onClick={() => setTab("lista")}
-            >
-              📋 Listă
-            </button>
-            <button
-              className={`px-4 py-2 rounded-xl text-sm font-medium transition ${
-                tab === "calendar"
-                  ? "bg-indigo-600 text-white shadow"
-                  : "text-gray-700 hover:bg-gray-50"
-              }`}
-              onClick={() => setTab("calendar")}
-            >
-              🗓 Calendar
-            </button>
-          </div>
-        </div>
-
-        {/* Toolbar căutare + filtre (fără sticky) */}
-        <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-3">
-          <input
-            type="text"
-            placeholder="Caută după materie, clasă, dată sau descriere…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full border rounded-2xl px-4 py-2.5 shadow-sm bg-white/80 backdrop-blur"
-          />
-          <select
-            value={fMaterie}
-            onChange={(e) => setFMaterie(e.target.value)}
-            className="w-full border rounded-2xl px-4 py-2.5 shadow-sm bg-white/80 backdrop-blur"
+    <div className="min-h-screen w-full bg-gradient-to-br from-indigo-50 to-white text-gray-800">
+      {/* ======= Header ======= */}
+      <div className="mx-4 md:mx-auto md:max-w-6xl">
+        <div className="flex justify-center pt-6 pb-6">
+          <Link
+            to="/profesor/dashboard"
+            className="inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm bg-white/80 backdrop-blur hover:bg-white shadow"
           >
-            {MATERII.map((m) => (
-              <option key={m}>{m}</option>
-            ))}
-          </select>
-          <select
-            value={fClasa}
-            onChange={(e) => setFClasa(e.target.value)}
-            className="w-full border rounded-2xl px-4 py-2.5 shadow-sm bg-white/80 backdrop-blur"
-          >
-            {CLASE.map((c) => (
-              <option key={c}>{c}</option>
-            ))}
-          </select>
+            ⟵ Înapoi la Dashboard
+          </Link>
         </div>
-
-        {/* LISTĂ */}
-        {tab === "lista" && (
-          <div className="mt-6">
-            <div className="space-y-4">
-              {filtered.length === 0 ? (
-                <p className="text-gray-500">Niciun test găsit.</p>
-              ) : (
-                filtered.map((t) => (
-                  <motion.div
-                    key={t.id}
-                    initial={{ opacity: 0, y: 6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.18 }}
-                    className="bg-white/90 backdrop-blur border border-gray-200 rounded-2xl p-4 shadow-md hover:shadow-lg"
-                  >
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <div className="text-indigo-900 font-semibold text-lg">
-                          📘 {t.subject} – {t.clasa || "fără clasă"}
-                        </div>
-                        <div className="text-sm text-gray-600">
-                          {t.event_date} · {t.event_time}
-                        </div>
-                        {t.descriere && (
-                          <div className="text-sm text-gray-700 mt-1">
-                            {t.descriere}
-                          </div>
-                        )}
-                        <div className="flex items-center gap-2 mt-2">
-                          <span
-                            className={`text-[11px] px-2 py-0.5 rounded-full border ${colorByTip(
-                              t.tip
-                            )}`}
-                          >
-                            {t.tip || "Profesor"}
-                          </span>
-                          {t.source && (
-                            <span className="text-[11px] px-2 py-0.5 rounded-full border bg-gray-100 text-gray-700 border-gray-200">
-                              Sursă: {t.source}
-                            </span>
-                          )}
-                          {t.anulat && (
-                            <span className="text-[11px] px-2 py-0.5 rounded-full border bg-red-100 text-red-700 border-red-200">
-                              Anulat
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => {
-                          setDefaultDate(t.event_date);
-                          setPickerOpen(true);
-                        }}
-                        className="rounded-xl border px-3 py-2 text-sm bg-white hover:bg-gray-50 shadow-sm"
-                      >
-                        Editare rapidă
-                      </button>
-                    </div>
-                  </motion.div>
-                ))
-              )}
+        <div className="rounded-2xl overflow-hidden shadow bg-gradient-to-r from-indigo-600 via-indigo-500 to-violet-500 text-white">
+          <div className="p-4 md:p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <h1 className="text-2xl md:text-3xl font-semibold">
+                Calendar Profesor
+              </h1>
+              <span className="text-white/80">
+                {currentDate.toLocaleDateString("ro-RO", {
+                  month: "long",
+                  year: "numeric",
+                })}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                className={`px-3 py-2 text-sm rounded-xl ${
+                  tab === "calendar"
+                    ? "bg-white text-indigo-700"
+                    : "bg-white/20 hover:bg-white/30"
+                }`}
+                onClick={() => setTab("calendar")}
+              >
+                Calendar
+              </button>
+              <button
+                className={`px-3 py-2 text-sm rounded-xl ${
+                  tab === "lista"
+                    ? "bg-white text-indigo-700"
+                    : "bg-white/20 hover:bg-white/30"
+                }`}
+                onClick={() => setTab("lista")}
+              >
+                Listă teste
+              </button>
+              <button
+                className={`px-3 py-2 text-sm rounded-xl ${
+                  tab === "confirmari"
+                    ? "bg-white text-indigo-700"
+                    : "bg-white/20 hover:bg-white/30"
+                }`}
+                onClick={() => {
+                  setTab("confirmari");
+                  fetchConfirmations();
+                }}
+              >
+                Confirmări elevi
+              </button>
+              <button
+                className="rounded-xl bg-white text-indigo-700 px-4 py-2 text-sm hover:bg-gray-100 shadow"
+                onClick={() => openCreate()}
+              >
+                + Adaugă test
+              </button>
             </div>
           </div>
-        )}
+        </div>
+      </div>
 
-        {/* CALENDAR */}
+      {/* ======= Content ======= */}
+      <div className="mx-4 md:mx-auto md:max-w-6xl my-6">
+        {/* Calendar */}
         {tab === "calendar" && (
-          <div className="mt-6">
-            {/* Header lună (fix, fără sticky) */}
-            <div className="bg-white/70 backdrop-blur border rounded-2xl p-3 shadow-sm flex items-center justify-between">
+          <div className="rounded-2xl border bg-white shadow p-4">
+            <div className="flex items-center justify-between mb-4">
               <button
-                className="rounded-xl border px-3 py-1.5 text-sm bg-white hover:bg-gray-50"
-                onClick={() => changeMonth(-1)}
+                className="rounded-lg border px-3 py-1.5 hover:bg-gray-50"
+                onClick={() =>
+                  setCurrentDate(
+                    new Date(
+                      currentDate.getFullYear(),
+                      currentDate.getMonth() - 1,
+                      1
+                    )
+                  )
+                }
               >
-                ⬅ Luna precedentă
+                ← Luna anterioară
               </button>
-              <div className="font-semibold text-indigo-900">
+              <div className="font-medium">
                 {currentDate.toLocaleDateString("ro-RO", {
                   month: "long",
                   year: "numeric",
                 })}
               </div>
               <button
-                className="rounded-xl border px-3 py-1.5 text-sm bg-white hover:bg-gray-50"
-                onClick={() => changeMonth(1)}
+                className="rounded-lg border px-3 py-1.5 hover:bg-gray-50"
+                onClick={() =>
+                  setCurrentDate(
+                    new Date(
+                      currentDate.getFullYear(),
+                      currentDate.getMonth() + 1,
+                      1
+                    )
+                  )
+                }
               >
-                Luna următoare ➡
+                Luna următoare →
               </button>
             </div>
-
-            {/* Legend */}
-            <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px]">
-              <span className="px-2 py-0.5 rounded-full border bg-blue-100 text-blue-800 border-blue-200">
-                Comper
-              </span>
-              <span className="px-2 py-0.5 rounded-full border bg-green-100 text-green-800 border-green-200">
-                Platformă
-              </span>
-              <span className="px-2 py-0.5 rounded-full border bg-purple-100 text-purple-800 border-purple-200">
-                Profesor
-              </span>
-              <span className="text-gray-500 ml-auto">
-                Click pe o zi pentru a adăuga test
-              </span>
-            </div>
-
-            {/* Zilele săptămânii */}
-            <div className="mt-4 grid grid-cols-7 gap-2 text-xs uppercase tracking-wide text-gray-500">
-              {weekdays.map((w, i) => (
+            <div className="grid grid-cols-7 gap-2 text-xs text-gray-500 mb-2 font-medium">
+              {weekdays.map((d, i) => (
                 <div key={i} className="text-center">
-                  {w}
+                  {d}
                 </div>
               ))}
             </div>
-
-            {/* Grid zile */}
-            <div className="mt-2 grid grid-cols-7 gap-2 text-sm md:text-base">
-              {renderCalendar()}
+            <div className="grid grid-cols-7 gap-2">
+              {weeks.map((row, ri) => (
+                <React.Fragment key={ri}>
+                  {row.map((day, di) =>
+                    day ? (
+                      <div
+                        key={di}
+                        className={`min-h[120px] min-h-[120px] rounded-xl border p-2 relative group transition ${
+                          new Date().getFullYear() ===
+                            currentDate.getFullYear() &&
+                          new Date().getMonth() === currentDate.getMonth() &&
+                          new Date().getDate() === day
+                            ? "ring-2 ring-indigo-400 bg-indigo-50"
+                            : "hover:bg-gray-50"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="text-xs text-gray-500">{day}</div>
+                          <button
+                            className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 hover:bg-gray-200 opacity-0 group-hover:opacity-100 transition"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openCreate(
+                                `${currentDate.getFullYear()}-${pad(
+                                  currentDate.getMonth() + 1
+                                )}-${pad(day)}`
+                              );
+                            }}
+                          >
+                            + adaugă
+                          </button>
+                        </div>
+                        <div className="mt-1 space-y-1">
+                          {(events || [])
+                            .filter(
+                              (e) =>
+                                getEventDate(e) ===
+                                `${currentDate.getFullYear()}-${pad(
+                                  currentDate.getMonth() + 1
+                                )}-${pad(day)}`
+                            )
+                            .map((e) => (
+                              <div
+                                key={e.id}
+                                className="text-[11px] rounded-lg px-2 py-1 bg-indigo-100 text-indigo-700 hover:bg-indigo-200 cursor-pointer"
+                                onClick={() => openEdit(e)}
+                                title={`${
+                                  e.title || "Test"
+                                } • ${formatEventDateTime(e)}`}
+                              >
+                                {e.title || e.subject || "Test"}
+                              </div>
+                            ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <div key={di} />
+                    )
+                  )}
+                </React.Fragment>
+              ))}
             </div>
           </div>
         )}
 
-        {/* Confirmări Elevi */}
-        <div className="mt-10">
-          <details className="bg-white/80 backdrop-blur border rounded-2xl p-4 shadow-md">
-            <summary className="text-lg font-semibold text-indigo-900 cursor-pointer select-none">
-              ✔ Confirmări Teste de la Elevi{" "}
-              <span className="text-sm text-gray-600">
-                (click pentru a extinde)
-              </span>
-            </summary>
-            <ul className="mt-4 space-y-3 text-sm text-gray-800">
-              {confirmari.length === 0 ? (
-                <li className="text-gray-500">Nicio confirmare încă.</li>
-              ) : (
-                confirmari.map((c, i) => (
-                  <li
-                    key={i}
-                    className="border rounded-xl p-3 bg-white shadow-sm"
+        {/* Listă teste */}
+        {tab === "lista" && (
+          <div className="space-y-4">
+            {events.map((ev) => (
+              <motion.div
+                key={ev.id}
+                layout
+                className="rounded-2xl border p-5 bg-white shadow hover:shadow-lg transition w-full"
+              >
+                <div>
+                  <h3 className="font-semibold text-lg">
+                    {ev.title || "Test"}
+                  </h3>
+                  <p className="text-xs text-gray-500">
+                    {formatEventDateTime(ev)}
+                  </p>
+                  <p className="text-sm text-indigo-600 mt-1">
+                    {ev.subject || "-"}
+                  </p>
+                </div>
+                <div className="mt-4 flex items-center gap-3">
+                  <button
+                    className="flex items-center gap-1 rounded-xl border px-4 py-2 text-sm hover:bg-gray-50"
+                    onClick={() => openEdit(ev)}
                   >
-                    <div className="font-medium text-indigo-700">
-                      {c.subject}{" "}
-                      {c.viewed && (
-                        <span className="text-green-600 text-xs ml-2">
-                          (Văzut)
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      {c.date} {c.time} – {c.desc}
-                    </div>
-                    <div className="text-xs text-green-600 mt-1">
-                      ✔ Confirmat:{" "}
-                      {new Date(c.confirmedAt).toLocaleString("ro-RO")}
-                    </div>
-                  </li>
-                ))
-              )}
-            </ul>
-          </details>
-        </div>
-      </main>
+                    ✏️ Editează
+                  </button>
+                  <button
+                    className="flex items-center gap-1 rounded-xl border px-4 py-2 text-sm hover:bg-gray-50"
+                    onClick={() => openSend(ev)}
+                  >
+                    📤 Trimite
+                  </button>
+                  <button
+                    className="flex items-center gap-1 rounded-xl border px-4 py-2 text-sm hover:bg-red-50 text-red-600"
+                    onClick={() => deleteEvent(ev.id)}
+                  >
+                    🗑️ Șterge
+                  </button>
+                </div>
+              </motion.div>
+            ))}
+            {events.length === 0 && (
+              <div className="rounded-2xl border bg-white p-6 text-center text-gray-500">
+                Niciun test programat.
+              </div>
+            )}
+          </div>
+        )}
 
-      {/* FAB – Adaugă test */}
-      <button
-        onClick={() => {
-          setDefaultDate(null);
-          setPickerOpen(true);
-        }}
-        className="fixed bottom-6 right-6 rounded-full shadow-2xl bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-3 text-sm font-semibold"
-        title="Adaugă test"
-      >
-        ➕ Adaugă test
-      </button>
+        {/* Confirmări elevi */}
+        {tab === "confirmari" && (
+          <div className="rounded-2xl border bg-white shadow-lg p-5">
+            <h2 className="font-medium mb-4">Confirmări elevi</h2>
+            {Object.entries(groupedConfirmations).map(([test, classes]) => (
+              <motion.div
+                key={test}
+                layout
+                className="mb-6 rounded-2xl border bg-white shadow p-5"
+              >
+                <h3 className="font-semibold text-lg mb-4">{test}</h3>
+                {Object.entries(classes).map(([cls, rows]) => (
+                  <div key={cls} className="mb-5">
+                    <h4 className="font-medium text-sm text-gray-600 mb-3">
+                      {cls}
+                    </h4>
+                    <div className="divide-y">
+                      {rows.map((c) => (
+                        <div
+                          key={c.id}
+                          className="flex justify-between items-center py-3"
+                        >
+                          <div>
+                            <span className="font-medium">
+                              {c.students?.name || "Elev"}
+                            </span>
+                            <span
+                              className={`ml-3 text-sm ${
+                                c.status === "confirmed"
+                                  ? "text-green-600"
+                                  : c.status === "pending"
+                                  ? "text-gray-600"
+                                  : "text-red-600"
+                              }`}
+                            >
+                              {c.status === "confirmed"
+                                ? "Confirmat"
+                                : c.status === "pending"
+                                ? "În așteptare"
+                                : "Anulat"}
+                            </span>
+                          </div>
+                          <button
+                            className="text-xs text-red-600 hover:underline flex items-center gap-1"
+                            onClick={() => deleteConfirmation(c.id)}
+                          >
+                            <Trash className="w-4 h-4" /> Șterge
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </motion.div>
+            ))}
+            {confirmations.length === 0 && (
+              <div className="rounded-2xl border bg-white p-6 text-center text-gray-500">
+                Nu există confirmări.
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* DateTimePicker */}
-      {pickerOpen && (
-        <DateTimePicker
-          defaultDate={defaultDate}
-          onClose={() => setPickerOpen(false)}
-          onSaved={() => {
-            setPickerOpen(false);
-            fetchEvents();
-          }}
-        />
-      )}
+      <AnimatePresence>
+        {pickerOpen && (
+          <DateTimePicker
+            event={selectedEvent}
+            defaultTab={defaultTab}
+            onClose={() => setPickerOpen(false)}
+            onSaved={() => {
+              setPickerOpen(false);
+              fetchEvents();
+              if (tab === "confirmari") fetchConfirmations();
+            }}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
-};
-
-export default CalendarProfesor;
+}

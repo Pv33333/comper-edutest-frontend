@@ -1,30 +1,43 @@
+import * as React from "react";
 import { cva } from "class-variance-authority";
 import clsx from "clsx";
 
-const button = cva(
-  "inline-flex items-center justify-center rounded-xl font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2",
+const buttonVariants = cva(
+  "inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none",
   {
     variants: {
-      intent: {
-        primary: "bg-gradient-to-r from-brand-primary to-brand-accent text-white hover:from-brand-accent hover:to-sky-600 focus-visible:ring-brand-accent",
-        secondary: "bg-neutral-100 text-neutral-800 hover:bg-neutral-200",
-        ghost: "text-neutral-800 hover:bg-neutral-100",
-        danger: "bg-red-500 text-white hover:bg-red-600",
+      variant: {
+        default: "bg-blue-600 text-white hover:bg-blue-700",
+        secondary: "bg-gray-200 text-gray-900 hover:bg-gray-300",
+        ghost: "bg-transparent hover:bg-gray-100",
+        destructive: "bg-red-600 text-white hover:bg-red-700",
       },
       size: {
-        sm: "px-3 py-1.5 text-sm",
-        md: "px-4 py-2 text-base",
-        lg: "px-6 py-3 text-lg",
+        default: "h-10 px-4 py-2",
+        sm: "h-9 px-3",
+        lg: "h-11 px-8",
+        icon: "h-10 w-10",
       },
     },
-    defaultVariants: { intent:"primary", size:"md" },
+    defaultVariants: {
+      variant: "default",
+      size: "default",
+    },
   }
 );
 
-export function Button({ intent, size, className, children, ...props }) {
-  return (
-    <button className={clsx(button({ intent, size }), className)} {...props}>
-      {children}
-    </button>
-  );
-}
+const Button = React.forwardRef(
+  ({ className, variant, size, ...props }, ref) => {
+    return (
+      <button
+        ref={ref}
+        className={clsx(buttonVariants({ variant, size }), className)}
+        {...props}
+      />
+    );
+  }
+);
+
+Button.displayName = "Button";
+
+export { Button, buttonVariants };

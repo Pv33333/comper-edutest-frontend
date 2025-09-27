@@ -1,10 +1,9 @@
 // src/pages/profesor/TestePlatforma.jsx
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabaseClient";
 
 /* ───────── Config ───────── */
-const MATERII = ["Română", "Matematică"];
 const CLASE = {
   Primar: [
     "Clasa Pregătitoare",
@@ -15,10 +14,12 @@ const CLASE = {
   ],
   Gimnazial: ["Clasa a V-a", "Clasa a VI-a", "Clasa a VII-a", "Clasa a VIII-a"],
 };
+const MATERII = ["Română", "Matematică"];
 
 /* ───────── Helpers ───────── */
 const safeTitle = (t, fallback = "Test platformă") =>
   (t && String(t).trim()) || fallback;
+
 const fmtDate = (d) => {
   if (!d) return "—";
   try {
@@ -29,7 +30,7 @@ const fmtDate = (d) => {
 };
 
 /* ───────── Actions ───────── */
-const ClassActions = ({ disabled, onStart, onSend }) => (
+const TestActions = ({ disabled, onStart, onSend }) => (
   <div className="flex flex-wrap items-center gap-2 mt-2">
     <button
       disabled={disabled}
@@ -40,11 +41,7 @@ const ClassActions = ({ disabled, onStart, onSend }) => (
           ? "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
           : "bg-blue-600 text-white border-blue-700 hover:bg-blue-700",
       ].join(" ")}
-      title={
-        disabled
-          ? "Nu există test publicat pentru această clasă"
-          : "Începe testul"
-      }
+      title={disabled ? "Nu există teste" : "Începe testul"}
     >
       Începe testul
     </button>
@@ -57,11 +54,7 @@ const ClassActions = ({ disabled, onStart, onSend }) => (
           ? "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
           : "bg-gray-100 hover:bg-gray-200 text-emerald-800 border-emerald-700",
       ].join(" ")}
-      title={
-        disabled
-          ? "Nu există test publicat pentru această clasă"
-          : "Trimite elevului"
-      }
+      title={disabled ? "Nu există teste" : "Trimite elevului"}
     >
       📤 Trimite elevului
     </button>
@@ -69,16 +62,21 @@ const ClassActions = ({ disabled, onStart, onSend }) => (
 );
 
 /* ───────── Pagina ───────── */
-export default function TestePlatforma() {
+export default function TestePlatformaProfesor() {
   const navigate = useNavigate();
 
-  // vizibilitate pe materie + ciclu (ca la Comper)
-  const [visiblePrimarRO, setVisiblePrimarRO] = useState(false);
-  const [visibleGimnazialRO, setVisibleGimnazialRO] = useState(false);
-  const [visiblePrimarMA, setVisiblePrimarMA] = useState(false);
-  const [visibleGimnazialMA, setVisibleGimnazialMA] = useState(false);
+  // acordeon pe materie+ciclu și pe clasă
+  const [openSection, setOpenSection] = useState({});
+  const [openClass, setOpenClass] = useState({});
 
-  // catalog drawer
+  // vizibilitate listă teste (după fetch) per clasă
+  const [openTests, setOpenTests] = useState({});
+
+  // cache + loading per clasă
+  const [cachePlatforma, setCachePlatforma] = useState({});
+  const [loadingKey, setLoadingKey] = useState(null);
+
+  // CATALOG
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [catMaterie, setCatMaterie] = useState("Română");
   const [catNivel, setCatNivel] = useState("Primar");
@@ -88,11 +86,42 @@ export default function TestePlatforma() {
   const [catLoading, setCatLoading] = useState(false);
   const searchRef = useRef(null);
 
+  const toggleSection = (key) =>
+    setOpenSection((s) => ({ ...s, [key]: !s[key] }));
+
+  const toggleClass = (key) => setOpenClass((s) => ({ ...s, [key]: !s[key] }));
+
+  const toggleTests = (key) => setOpenTests((s) => ({ ...s, [key]: !s[key] }));
+
+  const fetchPlatformaTests = useCallback(
+    async (materie, ciclu, clasa) => {
+      const k = `${materie}|${ciclu}|${clasa}`;
+      if (cachePlatforma[k] !== undefined) return cachePlatforma[k];
+      setLoadingKey(k);
+      try {
+        const { data, error } = await supabase
+          .from("tests_platforma")
+          .select(
+            "id, description, subject, school_class, exam_date, created_at"
+          )
+          .eq("subject", materie)
+          .eq("school_class", clasa)
+          .order("created_at", { ascending: false });
+        const val = error ? [] : data || [];
+        setCachePlatforma((m) => ({ ...m, [k]: val }));
+        return val;
+      } finally {
+        setLoadingKey(null);
+      }
+    },
+    [cachePlatforma]
+  );
+
   const loadCatalog = useCallback(async () => {
     setCatLoading(true);
     try {
       const { data, error } = await supabase
-        .from("tests")
+        .from("tests_platforma")
         .select("id, description, subject, school_class, exam_date")
         .eq("subject", catMaterie)
         .eq("school_class", catClasa)
@@ -112,41 +141,12 @@ export default function TestePlatforma() {
     }
   }, [catalogOpen, loadCatalog]);
 
-  // cache teste per clasă
-  const [cache, setCache] = useState({});
-  const [loadingKey, setLoadingKey] = useState(null);
-
-  const fetchLatestForClass = useCallback(
-    async (materie, clasa) => {
-      const k = `${materie}|${clasa}`;
-      if (cache[k] !== undefined) return cache[k];
-      setLoadingKey(k);
-      try {
-        const { data, error } = await supabase
-          .from("tests")
-          .select("id, description, subject, school_class, exam_date")
-          .eq("subject", materie)
-          .eq("school_class", clasa)
-          .order("exam_date", { ascending: false, nullsLast: true })
-          .order("id", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        const val = error ? null : data || null;
-        setCache((m) => ({ ...m, [k]: val }));
-        return val;
-      } finally {
-        setLoadingKey(null);
-      }
-    },
-    [cache]
-  );
-
-  const onStartClass = (testId) => {
+  const onStartTest = (testId) => {
     if (!testId) return;
     navigate(`/profesor/teste-platforma/start/${encodeURIComponent(testId)}`);
   };
 
-  const onSendClass = (row, materie, clasa) => {
+  const onSendTest = (row, materie, clasa) => {
     if (!row?.id) return;
     const payload = {
       id: row.id,
@@ -162,32 +162,13 @@ export default function TestePlatforma() {
     navigate(`/profesor/elevi?testId=${encodeURIComponent(row.id)}`);
   };
 
+  /* ───────── UI ───────── */
   const renderClasaSection = (materie, nivel) => {
     const colorTone =
       materie === "Română"
         ? "bg-blue-600 hover:bg-blue-700"
         : "bg-green-600 hover:bg-green-700";
-
-    const isOpen =
-      materie === "Română"
-        ? nivel === "Primar"
-          ? visiblePrimarRO
-          : visibleGimnazialRO
-        : nivel === "Primar"
-        ? visiblePrimarMA
-        : visibleGimnazialMA;
-
-    const toggle = () => {
-      if (materie === "Română") {
-        nivel === "Primar"
-          ? setVisiblePrimarRO((v) => !v)
-          : setVisibleGimnazialRO((v) => !v);
-      } else {
-        nivel === "Primar"
-          ? setVisiblePrimarMA((v) => !v)
-          : setVisibleGimnazialMA((v) => !v);
-      }
-    };
+    const secKey = `${materie}_${nivel}`;
 
     return (
       <div
@@ -197,7 +178,7 @@ export default function TestePlatforma() {
         <div className="flex items-center justify-between gap-2">
           <button
             className={`${colorTone} text-white px-4 py-2 rounded-xl font-medium shadow`}
-            onClick={toggle}
+            onClick={() => toggleSection(secKey)}
           >
             {materie} • Ciclul {nivel}
           </button>
@@ -209,47 +190,103 @@ export default function TestePlatforma() {
               setCatClasa(CLASE[nivel][0]);
               setCatalogOpen(true);
             }}
-            title="Catalog teste"
           >
             + Catalog
           </button>
         </div>
 
-        {isOpen && (
+        {openSection[secKey] && (
           <div className="flex flex-col items-center mt-4 gap-4 w-full">
             {CLASE[nivel].map((clasa) => {
-              const k = `${materie}|${clasa}`;
-              const row = cache[k];
-              const isLoading = loadingKey === k && row === undefined;
+              const clsKey = `${materie}_${nivel}_${clasa}`;
+              const cacheKey = `${materie}|${nivel}|${clasa}`;
+              const rows = cachePlatforma[cacheKey];
+              const isLoading = loadingKey === cacheKey && rows === undefined;
 
               return (
-                <div key={k} className="w-full">
-                  <button className="w-full text-left bg-white border border-blue-200 hover:border-blue-500 shadow-sm rounded-xl px-4 py-2 text-gray-800 font-semibold text-sm transition-all duration-200 hover:shadow-md mb-2">
+                <div key={clsKey} className="w-full">
+                  {/* Buton Clasă (toggle listă) */}
+                  <button
+                    className="w-full text-left bg-white border border-blue-200 hover:border-blue-500 shadow-sm rounded-xl px-4 py-2 text-gray-800 font-semibold text-sm transition mb-2"
+                    onClick={() => toggleClass(clsKey)}
+                  >
                     {clasa}
                   </button>
 
-                  <div className="pl-4">
-                    {row === undefined && !isLoading && (
-                      <button
-                        className="text-sm text-purple-700 underline"
-                        onClick={() => fetchLatestForClass(materie, clasa)}
-                      >
-                        Încarcă testul
-                      </button>
-                    )}
-                    {isLoading && (
-                      <div className="text-xs text-gray-500 mt-1">
-                        Se încarcă testul...
-                      </div>
-                    )}
-                    {row !== undefined && (
-                      <ClassActions
-                        disabled={!row}
-                        onStart={() => onStartClass(row?.id)}
-                        onSend={() => onSendClass(row, materie, clasa)}
-                      />
-                    )}
-                  </div>
+                  {/* Interior clasă */}
+                  {openClass[clsKey] && (
+                    <div className="pl-4">
+                      {/* Dacă nu avem încărcat nimic și nu se încarcă, arătăm butonul de încărcare */}
+                      {rows === undefined && !isLoading && (
+                        <button
+                          className="text-sm text-purple-700 underline"
+                          onClick={async () => {
+                            await fetchPlatformaTests(materie, nivel, clasa);
+                            toggleTests(cacheKey); // deschide lista după fetch
+                          }}
+                        >
+                          Încarcă testele
+                        </button>
+                      )}
+
+                      {/* Indicator de încărcare */}
+                      {isLoading && (
+                        <div className="text-xs text-gray-500 mt-1">
+                          Se încarcă testele...
+                        </div>
+                      )}
+
+                      {/* Lista teste (toggle separat ca la Comper) */}
+                      {rows !== undefined && (
+                        <div className="mt-2">
+                          {/* Header mic pentru a strânge/deschide lista */}
+                          <button
+                            className="text-xs text-gray-700 underline"
+                            onClick={() => toggleTests(cacheKey)}
+                          >
+                            {openTests[cacheKey]
+                              ? "Ascunde testele"
+                              : "Arată testele"}
+                          </button>
+
+                          {openTests[cacheKey] && (
+                            <div className="pl-3 space-y-2 mt-2">
+                              {rows.length === 0 ? (
+                                <div className="text-xs text-red-600">
+                                  Nu există teste publicate pentru această
+                                  clasă.
+                                </div>
+                              ) : (
+                                rows.map((row) => (
+                                  <div
+                                    key={row.id}
+                                    className="border rounded-xl p-3 bg-white shadow-sm"
+                                  >
+                                    <div className="font-semibold text-sm">
+                                      {safeTitle(row.description, "Test")}
+                                    </div>
+                                    <div className="text-xs opacity-70">
+                                      {row.subject} • {row.school_class}
+                                      {row.exam_date
+                                        ? ` • ${fmtDate(row.exam_date)}`
+                                        : ""}
+                                    </div>
+                                    <TestActions
+                                      disabled={!row}
+                                      onStart={() => onStartTest(row?.id)}
+                                      onSend={() =>
+                                        onSendTest(row, materie, clasa)
+                                      }
+                                    />
+                                  </div>
+                                ))
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -289,6 +326,19 @@ export default function TestePlatforma() {
           </div>
         </section>
       </main>
+
+      {/* FAB Catalog global */}
+      <button
+        onClick={() => {
+          setCatMaterie("Română");
+          setCatNivel("Primar");
+          setCatClasa(CLASE["Primar"][0]);
+          setCatalogOpen(true);
+        }}
+        className="fixed bottom-6 right-6 rounded-full shadow-2xl bg-purple-600 hover:bg-purple-700 text-white px-5 py-3 text-sm font-semibold"
+      >
+        + Catalog teste
+      </button>
 
       {/* Drawer Catalog */}
       {catalogOpen && (

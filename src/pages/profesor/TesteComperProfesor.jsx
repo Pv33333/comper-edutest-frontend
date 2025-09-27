@@ -1,4 +1,3 @@
-// src/pages/profesor/TesteComper.jsx
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { supabase } from "@/lib/supabaseClient";
@@ -24,6 +23,7 @@ const ETAPE = [
 /* ───────── Helpers ───────── */
 const safeTitle = (t, fallback = "Test Comper") =>
   (t && String(t).trim()) || fallback;
+
 const fmtDate = (d) => {
   if (!d) return "—";
   try {
@@ -34,7 +34,7 @@ const fmtDate = (d) => {
 };
 
 /* ───────── Actions ───────── */
-const StageActions = ({ disabled, onStart, onSend }) => (
+const TestActions = ({ disabled, onStart, onSend }) => (
   <div className="flex flex-wrap items-center gap-2 mt-2">
     <button
       disabled={disabled}
@@ -64,18 +64,32 @@ const StageActions = ({ disabled, onStart, onSend }) => (
 );
 
 /* ───────── Pagina ───────── */
-export default function TesteComper() {
+export default function TesteComperProfesor() {
   const navigate = useNavigate();
 
-  // vizibilitate per Materie × Ciclu
-  const [visiblePrimarRO, setVisiblePrimarRO] = useState(false);
-  const [visibleGimnazialRO, setVisibleGimnazialRO] = useState(false);
-  const [visiblePrimarMA, setVisiblePrimarMA] = useState(false);
-  const [visibleGimnazialMA, setVisibleGimnazialMA] = useState(false);
-
-  // cache teste comper
+  // state pentru acordeoane clase și etape
+  const [openClass, setOpenClass] = useState({});
+  const [openStage, setOpenStage] = useState({});
   const [cacheComper, setCacheComper] = useState({});
   const [loadingKey, setLoadingKey] = useState(null);
+
+  // state pentru Catalog
+  const [catalogOpen, setCatalogOpen] = useState(false);
+  const [catMaterie, setCatMaterie] = useState("Română");
+  const [catNivel, setCatNivel] = useState("Primar");
+  const [catClasa, setCatClasa] = useState(CLASE["Primar"][0]);
+  const [catSearch, setCatSearch] = useState("");
+  const [catTests, setCatTests] = useState([]);
+  const [catLoading, setCatLoading] = useState(false);
+  const searchRef = useRef(null);
+
+  const toggleClass = (clasaKey) => {
+    setOpenClass((prev) => ({ ...prev, [clasaKey]: !prev[clasaKey] }));
+  };
+
+  const toggleStage = (stageKey) => {
+    setOpenStage((prev) => ({ ...prev, [stageKey]: !prev[stageKey] }));
+  };
 
   const fetchComperStage = useCallback(
     async (materie, ciclu, clasa, stageKey) => {
@@ -85,15 +99,16 @@ export default function TesteComper() {
       try {
         const { data, error } = await supabase
           .from("tests_comper")
-          .select("id, title, subject, cycle, class_name, stage, published")
+          .select(
+            "id, title, subject, cycle, class_name, stage, published, created_at"
+          )
           .eq("published", true)
           .eq("subject", materie)
           .eq("cycle", ciclu)
           .eq("class_name", clasa)
           .eq("stage", stageKey)
-          .limit(1)
-          .maybeSingle();
-        const val = error ? null : data || null;
+          .order("created_at", { ascending: false });
+        const val = error ? [] : data || [];
         setCacheComper((m) => ({ ...m, [k]: val }));
         return val;
       } finally {
@@ -102,39 +117,6 @@ export default function TesteComper() {
     },
     [cacheComper]
   );
-
-  const onStartStage = (testId) => {
-    if (!testId) return;
-    navigate(`/profesor/teste-comper/start/${encodeURIComponent(testId)}`);
-  };
-
-  const onSendStage = (row, materie, ciclu, clasa, stageKey) => {
-    if (!row?.id) return;
-    const payload = {
-      id: row.id,
-      source: "comper",
-      subject: materie === "Română" ? "romana" : "mate",
-      cycle: ciclu.toLowerCase(),
-      className: clasa,
-      stage: stageKey,
-      title: safeTitle(row.title, `Test ${materie} – ${clasa} – ${stageKey}`),
-      createdAt: new Date().toISOString(),
-    };
-    try {
-      localStorage.setItem("selected_test", JSON.stringify(payload));
-    } catch {}
-    navigate(`/profesor/elevi?testId=${encodeURIComponent(row.id)}`);
-  };
-
-  /* ───────── Catalog (identic cu Platforma) ───────── */
-  const [catalogOpen, setCatalogOpen] = useState(false);
-  const [catMaterie, setCatMaterie] = useState("Română");
-  const [catNivel, setCatNivel] = useState("Primar");
-  const [catClasa, setCatClasa] = useState(CLASE["Primar"][0]);
-  const [catSearch, setCatSearch] = useState("");
-  const [catTests, setCatTests] = useState([]);
-  const [catLoading, setCatLoading] = useState(false);
-  const searchRef = useRef(null);
 
   const loadCatalog = useCallback(async () => {
     setCatLoading(true);
@@ -160,32 +142,35 @@ export default function TesteComper() {
     }
   }, [catalogOpen, loadCatalog]);
 
+  const onStartStage = (testId) => {
+    if (!testId) return;
+    navigate(`/profesor/teste-comper/start/${encodeURIComponent(testId)}`);
+  };
+
+  const onSendStage = (row, materie, ciclu, clasa, stageKey) => {
+    if (!row?.id) return;
+    const payload = {
+      id: row.id,
+      source: "comper",
+      subject: materie === "Română" ? "romana" : "mate",
+      cycle: ciclu.toLowerCase(),
+      className: clasa,
+      stage: stageKey,
+      title: safeTitle(row.title, `Test ${materie} – ${clasa} – ${stageKey}`),
+      createdAt: new Date().toISOString(),
+    };
+    try {
+      localStorage.setItem("selected_test", JSON.stringify(payload));
+    } catch {}
+    navigate(`/profesor/elevi?testId=${encodeURIComponent(row.id)}`);
+  };
+
+  /* ───────── UI ───────── */
   const renderClasaSection = (materie, nivel) => {
     const colorTone =
       materie === "Română"
         ? "bg-blue-600 hover:bg-blue-700"
         : "bg-green-600 hover:bg-green-700";
-
-    const isOpen =
-      materie === "Română"
-        ? nivel === "Primar"
-          ? visiblePrimarRO
-          : visibleGimnazialRO
-        : nivel === "Primar"
-        ? visiblePrimarMA
-        : visibleGimnazialMA;
-
-    const toggle = () => {
-      if (materie === "Română") {
-        nivel === "Primar"
-          ? setVisiblePrimarRO((v) => !v)
-          : setVisibleGimnazialRO((v) => !v);
-      } else {
-        nivel === "Primar"
-          ? setVisiblePrimarMA((v) => !v)
-          : setVisibleGimnazialMA((v) => !v);
-      }
-    };
 
     return (
       <div
@@ -195,7 +180,7 @@ export default function TesteComper() {
         <div className="flex items-center justify-between gap-2">
           <button
             className={`${colorTone} text-white px-4 py-2 rounded-xl font-medium shadow`}
-            onClick={toggle}
+            onClick={() => toggleClass(`${materie}_${nivel}`)}
           >
             {materie} • Ciclul {nivel}
           </button>
@@ -207,72 +192,97 @@ export default function TesteComper() {
               setCatClasa(CLASE[nivel][0]);
               setCatalogOpen(true);
             }}
-            title="Catalog teste"
           >
             + Catalog
           </button>
         </div>
 
-        {isOpen && (
+        {openClass[`${materie}_${nivel}`] && (
           <div className="flex flex-col items-center mt-4 gap-4 w-full">
             {CLASE[nivel].map((clasa) => (
               <div key={`${materie}_${nivel}_${clasa}`} className="w-full">
-                <div className="w-full text-left bg-white border border-blue-200 shadow-sm rounded-xl px-4 py-2 text-gray-800 font-semibold text-sm mb-2">
+                <button
+                  className="w-full text-left bg-white border border-blue-200 shadow-sm rounded-xl px-4 py-2 text-gray-800 font-semibold text-sm mb-2"
+                  onClick={() => toggleClass(`${materie}_${nivel}_${clasa}`)}
+                >
                   {clasa}
-                </div>
+                </button>
 
-                <div className="pl-4">
-                  {ETAPE.map((st) => {
-                    const k = `${materie}|${nivel}|${clasa}|${st.key}`;
-                    const row = cacheComper[k];
-                    const isLoading = loadingKey === k && row === undefined;
+                {openClass[`${materie}_${nivel}_${clasa}`] && (
+                  <div className="pl-4">
+                    {ETAPE.map((st) => {
+                      const k = `${materie}|${nivel}|${clasa}|${st.key}`;
+                      const rows = cacheComper[k];
+                      const isLoading = loadingKey === k && rows === undefined;
 
-                    return (
-                      <div key={k} className="my-2">
-                        {row === undefined && !isLoading && (
+                      return (
+                        <div key={k} className="mb-4">
+                          {/* Buton Etapă */}
                           <button
-                            className="text-sm text-purple-700 underline"
-                            onClick={() =>
-                              fetchComperStage(materie, nivel, clasa, st.key)
-                            }
+                            className="w-full text-left bg-gray-100 hover:bg-gray-200 border border-gray-300 shadow-sm rounded-xl px-4 py-2 font-medium text-sm transition mb-2"
+                            onClick={() => {
+                              toggleStage(k);
+                              fetchComperStage(materie, nivel, clasa, st.key);
+                            }}
                           >
-                            Încarcă testul – {st.label}
+                            {st.label}
                           </button>
-                        )}
 
-                        {isLoading && (
-                          <div className="text-xs text-gray-500">
-                            Se încarcă testul pentru {st.label}...
-                          </div>
-                        )}
-
-                        {row !== undefined && (
-                          <div className="pl-3">
-                            {row === null ? (
-                              <div className="text-xs text-red-600 mt-1">
-                                Nu există test publicat pentru {st.label}.
-                              </div>
-                            ) : (
-                              <StageActions
-                                disabled={!row}
-                                onStart={() => onStartStage(row?.id)}
-                                onSend={() =>
-                                  onSendStage(
-                                    row,
-                                    materie,
-                                    nivel,
-                                    clasa,
-                                    st.key
-                                  )
-                                }
-                              />
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
+                          {/* Teste sub Etapă */}
+                          {openStage[k] && (
+                            <div className="pl-3">
+                              {isLoading && (
+                                <div className="text-xs text-gray-500 mt-1">
+                                  Se încarcă testele pentru {st.label}...
+                                </div>
+                              )}
+                              {rows !== undefined && (
+                                <div className="space-y-2">
+                                  {rows.length === 0 ? (
+                                    <div className="text-xs text-red-600 mt-1">
+                                      Nu există test publicat pentru {st.label}.
+                                    </div>
+                                  ) : (
+                                    rows.map((row) => (
+                                      <div
+                                        key={row.id}
+                                        className="border rounded-xl p-3 bg-white shadow-sm"
+                                      >
+                                        <div className="font-semibold text-sm">
+                                          {safeTitle(row.title, "Test")}
+                                        </div>
+                                        <div className="text-xs opacity-70">
+                                          {row.subject} • {row.class_name} •{" "}
+                                          {st.label}
+                                          {row.created_at
+                                            ? ` • ${fmtDate(row.created_at)}`
+                                            : ""}
+                                        </div>
+                                        <TestActions
+                                          disabled={!row}
+                                          onStart={() => onStartStage(row?.id)}
+                                          onSend={() =>
+                                            onSendStage(
+                                              row,
+                                              materie,
+                                              nivel,
+                                              clasa,
+                                              st.key
+                                            )
+                                          }
+                                        />
+                                      </div>
+                                    ))
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -320,7 +330,6 @@ export default function TesteComper() {
           setCatalogOpen(true);
         }}
         className="fixed bottom-6 right-6 rounded-full shadow-2xl bg-purple-600 hover:bg-purple-700 text-white px-5 py-3 text-sm font-semibold"
-        title="Catalog teste"
       >
         + Catalog teste
       </button>
@@ -420,7 +429,6 @@ export default function TesteComper() {
                       <button
                         className="rounded-lg border px-3 py-1.5 text-sm bg-white hover:bg-gray-50"
                         onClick={() => setCatalogOpen(false)}
-                        title="Selectează"
                       >
                         Selectează
                       </button>

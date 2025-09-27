@@ -1,79 +1,206 @@
-import React from "react";
+import React, { useState, useRef } from "react";
 import { Link } from "react-router-dom";
+import {
+  ArrowLeft,
+  FileText,
+  Award,
+  Printer,
+  Download,
+  Copy,
+} from "lucide-react";
+import html2canvas from "html2canvas";
+import jsPDF from "jspdf";
 
-// Pagina Diplome & Certificate (Elev) – fără Header/Footer externe.
-// Include buton "Înapoi la Dashboard" direct în pagină.
-// TailwindCSS este folosit pentru stilizare (presupune setup existent în proiect).
+const DiplomeCertificari = () => {
+  const [selected, setSelected] = useState(null);
+  const diplomaRef = useRef(null);
 
-const diplomas = [
-  {
-    id: "participare",
-    title: "🏅 Diplomă de Participare",
-    description: "Pentru implicare activă în testele Comper",
-    fileHref: "/diploma_participare_comper.pdf", // Plasează PDF-ul în /public pentru Vite
-    theme: {
-      from: "from-yellow-100",
-      to: "to-yellow-50",
-      border: "border-yellow-200",
-      title: "text-yellow-800",
-      button: "bg-yellow-500 hover:bg-yellow-600",
+  const dataAzi = new Date().toLocaleDateString("ro-RO", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  });
+
+  const [fields, setFields] = useState({
+    nume: "Popescu Andrei",
+    scoala: "Școala Gimnazială nr. 5, Clasa a IV-a",
+    motiv: "pentru rezultate deosebite la testele Comper",
+  });
+
+  // Export functions
+  const handlePrint = () => {
+    const printWindow = window.open("", "_blank");
+    if (printWindow && diplomaRef.current) {
+      printWindow.document.write(`
+        <html>
+          <head><title>${selected?.title}</title></head>
+          <body>${diplomaRef.current.innerHTML}</body>
+        </html>
+      `);
+      printWindow.document.close();
+      printWindow.print();
+    }
+  };
+
+  const handleExportPNG = async () => {
+    if (!diplomaRef.current) return;
+    const canvas = await html2canvas(diplomaRef.current);
+    const dataUrl = canvas.toDataURL("image/png");
+    const link = document.createElement("a");
+    link.href = dataUrl;
+    link.download = `${selected?.title || "diploma"}.png`;
+    link.click();
+  };
+
+  const handleExportPDF = async () => {
+    if (!diplomaRef.current) return;
+    const canvas = await html2canvas(diplomaRef.current);
+    const imgData = canvas.toDataURL("image/png");
+    const pdf = new jsPDF("p", "mm", "a4");
+    const width = pdf.internal.pageSize.getWidth();
+    const height = (canvas.height * width) / canvas.width;
+    pdf.addImage(imgData, "PNG", 0, 0, width, height);
+    pdf.save(`${selected?.title || "diploma"}.pdf`);
+  };
+
+  const handleCopy = () => {
+    const text = `
+    ${selected?.title}
+    Se acordă elevului ${fields.nume},
+    de la ${fields.scoala},
+    ${fields.motiv}.
+    Data: ${dataAzi}
+    `;
+    navigator.clipboard.writeText(text);
+    alert("Textul diplomei a fost copiat!");
+  };
+
+  // Lista carduri diplome
+  const diplome = [
+    {
+      id: "participare",
+      title: "Diplomă de Participare",
+      desc: "Se acordă pentru participarea la testele Comper",
+      icon: <FileText size={28} className="text-indigo-600" />,
     },
-  },
-];
+    {
+      id: "merit",
+      title: "Diplomă de Merit",
+      desc: "Se acordă pentru rezultate deosebite la testele Comper",
+      icon: <Award size={28} className="text-emerald-600" />,
+    },
+  ];
 
-export default function DiplomeCertificari() {
   return (
-    <div className="-50 min-h-screen text-gray-800">
-      <div className="max-w-5xl mx-auto px-4 pt-8 pb-16">
-        {/* Înapoi la Dashboard (în pagină) */}
-        <section className="max-w-6xl mx-auto mt-2 mb-6 px-0">
-          <Link
-            className="flex items-center justify-center gap-2 text-base sm:text-lg text-blue-700 hover:text-blue-900 transition font-medium"
-            to="/elev/dashboard"
-          >
-            <svg
-              className="w-5 h-5 sm:w-6 sm:h-6"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              viewBox="0 0 24 24"
-            >
-              <path d="M15 19l-7-7 7-7" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-            Înapoi la Dashboard
-          </Link>
-        </section>
-
-        <h1 className="text-4xl font-bold text-blue-800 text-center mb-10">
-          🎖 Diplome și Certificate
+    <div className="min-h-[100dvh] w-full bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-50 via-white to-white text-blue-900 font-sans flex flex-col">
+      {/* Buton Înapoi */}
+      <div className="flex flex-col items-center pt-10 pb-6">
+        <Link
+          to="/elev/dashboard"
+          className="inline-flex items-center gap-2 rounded-full border px-5 py-2 text-sm bg-white/80 backdrop-blur shadow hover:shadow-lg transition"
+        >
+          <ArrowLeft size={18} /> Înapoi la Dashboard
+        </Link>
+        <h1 className="text-2xl font-bold text-blue-900 mt-4">
+          🎓 Diplome și Certificări
         </h1>
+      </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {diplomas.map((d) => (
+      {/* Dacă nu e selectată diplomă → arătăm cardurile */}
+      {!selected && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl mx-auto px-4 pb-12">
+          {diplome.map((d) => (
             <div
               key={d.id}
-              className={`bg-gradient-to-br ${d.theme.from} ${d.theme.to} border ${d.theme.border} shadow rounded-2xl p-6 flex flex-col justify-between`}
+              onClick={() => setSelected(d)}
+              className="cursor-pointer rounded-2xl border bg-white p-6 shadow-lg hover:shadow-2xl transition transform hover:-translate-y-1 flex flex-col items-center text-center"
             >
-              <div>
-                <h2 className={`text-xl font-semibold ${d.theme.title} mb-2`}>
-                  {d.title}
-                </h2>
-                <p className="text-sm text-gray-700">{d.description}</p>
-              </div>
-              <div className="mt-6">
-                <a
-                  href={d.fileHref}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className={`inline-block ${d.theme.button} text-white px-4 py-2 rounded-xl text-sm shadow`}
-                >
-                  📥 Descarcă diploma
-                </a>
-              </div>
+              {d.icon}
+              <h2 className="mt-4 text-lg font-bold text-blue-900">
+                {d.title}
+              </h2>
+              <p className="text-sm text-gray-600 mt-2">{d.desc}</p>
             </div>
           ))}
         </div>
-      </div>
+      )}
+
+      {/* Dacă e selectată diplomă → arătăm preview A4 */}
+      {selected && (
+        <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 flex-1 space-y-6">
+          <div
+            ref={diplomaRef}
+            className="bg-white shadow-2xl rounded-xl mx-auto p-10 border max-w-3xl aspect-[1/1.4] relative overflow-hidden"
+            style={{ fontFamily: "serif" }}
+          >
+            <div className="absolute inset-0 bg-gradient-to-tr from-indigo-50 via-white to-indigo-100 opacity-60 pointer-events-none" />
+            <div className="relative z-10">
+              <h2 className="text-4xl font-extrabold text-center text-blue-900 mb-6 tracking-wide">
+                {selected.title}
+              </h2>
+              <p className="text-lg text-gray-700 mb-4 text-center">
+                Se acordă elevului
+              </p>
+              <input
+                value={fields.nume}
+                onChange={(e) => setFields({ ...fields, nume: e.target.value })}
+                className="w-full text-2xl font-bold text-indigo-700 text-center border-b border-indigo-300 focus:outline-none mb-6"
+              />
+              <p className="text-center text-gray-700 mb-2">de la</p>
+              <input
+                value={fields.scoala}
+                onChange={(e) =>
+                  setFields({ ...fields, scoala: e.target.value })
+                }
+                className="w-full text-lg text-center border-b border-indigo-300 focus:outline-none mb-6"
+              />
+              <p className="text-center text-gray-700 mb-2">pentru</p>
+              <textarea
+                value={fields.motiv}
+                onChange={(e) =>
+                  setFields({ ...fields, motiv: e.target.value })
+                }
+                className="w-full text-lg italic text-center border-b border-indigo-300 focus:outline-none mb-6 resize-none"
+                rows={2}
+              />
+              <div className="flex justify-between mt-12 px-6 text-sm text-gray-700">
+                <span>Data: {dataAzi}</span>
+                <span>Semnătură / Ștampilă: __________</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Acțiuni */}
+          <div className="flex justify-center gap-4 mt-8 mb-8">
+            <button
+              onClick={handlePrint}
+              className="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 flex items-center gap-2"
+            >
+              <Printer size={18} /> Print
+            </button>
+            <button
+              onClick={handleExportPNG}
+              className="px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 flex items-center gap-2"
+            >
+              <Download size={18} /> Export PNG
+            </button>
+            <button
+              onClick={handleExportPDF}
+              className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 flex items-center gap-2"
+            >
+              <Download size={18} /> Export PDF
+            </button>
+            <button
+              onClick={handleCopy}
+              className="px-4 py-2 rounded-lg bg-rose-600 text-white hover:bg-rose-700 flex items-center gap-2"
+            >
+              <Copy size={18} /> Copiază text
+            </button>
+          </div>
+        </main>
+      )}
     </div>
   );
-}
+};
+
+export default DiplomeCertificari;

@@ -12,6 +12,8 @@ import Login from "@/pages/autentificare/Login.jsx";
 import Inregistrare from "@/pages/autentificare/Inregistrare.jsx";
 import OAuthCallback from "@/pages/autentificare/OAuthCallback.jsx";
 import LoginAdmin from "@/pages/autentificare/LoginAdmin.jsx"; // ← pagina de login admin
+import ReseteazaParola from "@/pages/autentificare/ReseteazaParola.jsx";
+import PasswordResetCallback from "@/pages/autentificare/PasswordResetCallback.jsx";
 
 // Lazy pages (utilizatori)
 const DashboardElev = lazy(() => import("@/pages/elev/DashboardElev.jsx"));
@@ -25,11 +27,11 @@ const EleviGestionare = lazy(() =>
 const RezultateElevi = lazy(() =>
   import("@/pages/profesor/RezultateElevi.jsx")
 );
-const RapoarteTestare = lazy(() =>
-  import("@/pages/profesor/RapoarteTestare.jsx")
+const RapoarteProfesor = lazy(() =>
+  import("@/pages/profesor/RapoarteProfesor.jsx")
 );
-const RaportDetaliat = lazy(() =>
-  import("@/pages/profesor/RaportDetaliat.jsx")
+const RaportDetaliatProfesor = lazy(() =>
+  import("@/pages/profesor/RaportDetaliatProfesor.jsx")
 );
 const DashboardParinte = lazy(() =>
   import("@/pages/parinte/DashboardParinte.jsx")
@@ -92,8 +94,8 @@ export default function AppRouter() {
     "/profesor/dashboard",
     "/profesor/elevi",
     "/profesor/rezultate-elevi",
-    "/profesor/rapoarte-testare",
-    "/profesor/raport-detaliat",
+    "/profesor/rapoarte",
+    "/profesor/raport-detaliat/:id",
     "/parinte/dashboard",
     "/admin/dashboard",
   ]);
@@ -144,6 +146,15 @@ export default function AppRouter() {
             }
           />
           <Route
+            path="/elev/rezolva-test"
+            element={
+              <RequireRole allow={["elev"]}>
+                {withSuspense(<RezolvaTest />)}
+              </RequireRole>
+            }
+          />
+
+          <Route
             path="/elev/teste/:id"
             element={
               <RequireRole allow={["elev"]}>
@@ -178,18 +189,18 @@ export default function AppRouter() {
             }
           />
           <Route
-            path="/profesor/rapoarte-testare"
+            path="/profesor/rapoarte"
             element={
               <RequireRole allow={["profesor"]}>
-                {withSuspense(<RapoarteTestare />)}
+                {withSuspense(<RapoarteProfesor />)}
               </RequireRole>
             }
           />
           <Route
-            path="/profesor/raport-detaliat"
+            path="/profesor/raport-detaliat/:id"
             element={
               <RequireRole allow={["profesor"]}>
-                {withSuspense(<RaportDetaliat />)}
+                {withSuspense(<RaportDetaliatProfesor />)}
               </RequireRole>
             }
           />

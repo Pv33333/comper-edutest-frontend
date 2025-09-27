@@ -12,15 +12,16 @@ export default function ProfilProfesor() {
   const [ok, setOk] = useState("");
 
   const [form, setForm] = useState({
-    first_name: "",
-    last_name: "",
-    birth_date: "",
+    prenume: "",
+    nume: "",
+    birthdate: "",
     email: "",
-    phone: "",
+    telefon: "",
     username: "",
-    county: "",
-    city: "",
-    school: "",
+    judet: "",
+    oras: "",
+    scoala: "",
+    tip_profesor: "",
     avatar_url: "",
   });
 
@@ -31,18 +32,17 @@ export default function ProfilProfesor() {
     setForm((f) => ({ ...f, [name]: value }));
   };
 
-  // Calculează progres completare
   const progress = useMemo(() => {
     const keys = [
-      "first_name",
-      "last_name",
-      "birth_date",
+      "prenume",
+      "nume",
+      "birthdate",
       "email",
-      "phone",
+      "telefon",
       "username",
-      "county",
-      "city",
-      "school",
+      "judet",
+      "oras",
+      "scoala",
     ];
     const filled = keys.filter((k) => form[k]?.trim()).length;
     return Math.round((filled / keys.length) * 100);
@@ -57,9 +57,9 @@ export default function ProfilProfesor() {
     setError("");
     try {
       const { data, error } = await supabase
-        .from("teacher_profiles")
+        .from("profiles")
         .select(
-          "first_name,last_name,birth_date,email,phone,username,county,city,school,avatar_url"
+          "prenume,nume,birthdate,email,telefon,username,judet,oras,scoala,tip_profesor,avatar_url"
         )
         .eq("id", user.id)
         .maybeSingle();
@@ -99,7 +99,7 @@ export default function ProfilProfesor() {
       };
 
       const { error } = await supabase
-        .from("teacher_profiles")
+        .from("profiles")
         .upsert(payload, { onConflict: "id" });
       if (error) throw error;
 
@@ -138,7 +138,7 @@ export default function ProfilProfesor() {
       setForm((f) => ({ ...f, avatar_url: publicUrl || "" }));
 
       await supabase
-        .from("teacher_profiles")
+        .from("profiles")
         .update({ avatar_url: publicUrl })
         .eq("id", user.id);
     } catch (err) {
@@ -156,14 +156,13 @@ export default function ProfilProfesor() {
   }, [user?.id]);
 
   const initials = (() => {
-    const fn = (form.first_name || "").trim();
-    const ln = (form.last_name || "").trim();
+    const fn = (form.prenume || "").trim();
+    const ln = (form.nume || "").trim();
     return `${fn[0] || ""}${ln[0] || ""}`.toUpperCase() || "PR";
   })();
 
   return (
     <div className="min-h-screen w-full text-gray-800 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-50 via-white to-white">
-      {/* Înapoi la Dashboard */}
       <div className="flex justify-center pt-10 pb-6">
         <Link
           to="/profesor/dashboard"
@@ -178,7 +177,7 @@ export default function ProfilProfesor() {
           👤 Profil profesor
         </h1>
 
-        {/* Card header cu avatar premium */}
+        {/* Card header */}
         <div className="bg-white/90 backdrop-blur border border-gray-200 rounded-2xl p-5 shadow-md">
           <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4">
             <div className="relative">
@@ -212,13 +211,12 @@ export default function ProfilProfesor() {
 
             <div className="flex-1 text-center sm:text-left">
               <div className="text-xl font-semibold text-indigo-900">
-                {(form.first_name || "—") + " " + (form.last_name || "")}
+                {(form.prenume || "—") + " " + (form.nume || "")}
               </div>
               <div className="text-sm text-gray-600">
                 {form.email || user?.email || "—"}
               </div>
 
-              {/* Bara de progres */}
               <div className="mt-3 w-full h-2 bg-gray-200 rounded-full overflow-hidden">
                 <div
                   className="h-full bg-indigo-600 transition-all duration-500"
@@ -236,15 +234,21 @@ export default function ProfilProfesor() {
         <div className="mt-6 bg-white/90 backdrop-blur border border-gray-200 rounded-2xl p-5 shadow-md">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {[
-              { id: "first_name", label: "Prenume", type: "text" },
-              { id: "last_name", label: "Nume", type: "text" },
-              { id: "birth_date", label: "Data nașterii", type: "date" },
+              { id: "prenume", label: "Prenume", type: "text" },
+              { id: "nume", label: "Nume", type: "text" },
+              { id: "birthdate", label: "Data nașterii", type: "date" },
               { id: "email", label: "Email", type: "email" },
-              { id: "phone", label: "Telefon", type: "tel" },
+              { id: "telefon", label: "Telefon", type: "tel" },
               { id: "username", label: "Username", type: "text" },
-              { id: "county", label: "Județ", type: "text" },
-              { id: "city", label: "Oraș", type: "text" },
-              { id: "school", label: "Școala", type: "text", full: true },
+              { id: "judet", label: "Județ", type: "text" },
+              { id: "oras", label: "Oraș", type: "text" },
+              { id: "scoala", label: "Școala", type: "text", full: true },
+              {
+                id: "tip_profesor",
+                label: "Tip profesor",
+                type: "text",
+                full: true,
+              },
             ].map((field) => (
               <div key={field.id} className={field.full ? "md:col-span-2" : ""}>
                 <label
@@ -266,7 +270,6 @@ export default function ProfilProfesor() {
             ))}
           </div>
 
-          {/* Actions */}
           <div className="flex justify-end gap-2 mt-6">
             <button
               className="rounded-xl border px-4 py-2 text-sm bg-white hover:bg-gray-50"

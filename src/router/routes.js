@@ -30,6 +30,9 @@ const FormularScoala = lazy(() =>
 const ReseteazaParola = lazy(() =>
   import("@/pages/autentificare/ReseteazaParola.jsx")
 );
+const PasswordResetCallback = lazy(() =>
+  import("@/pages/autentificare/PasswordResetCallback.jsx")
+);
 
 /* ====================== Admin ====================== */
 const DashboardAdmin = lazy(() => import("@/pages/admin/DashboardAdmin.jsx"));
@@ -195,6 +198,11 @@ export const routes = [
   {
     path: "/autentificare/reseteaza-parola",
     el: ReseteazaParola,
+    meta: { layout: "site" },
+  },
+  {
+    path: "/autentificare/reset-callback",
+    el: PasswordResetCallback,
     meta: { layout: "site" },
   },
 

@@ -1,14 +1,22 @@
-import React from "react";
-export default function Input({ className = "", ...props }) {
-  return (
-    <input
-      className={[
-        "w-full h-11 rounded-xl border border-default bg-white/95 px-3",
-        "text-[rgb(var(--text))] placeholder-[rgb(var(--muted))]",
-        "focus:border-[rgba(var(--ring),.6)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[rgba(59,130,246,.25)]",
-        className,
-      ].join(" ")}
-      {...props}
-    />
-  );
-}
+import * as React from "react";
+import clsx from "clsx";
+
+const Input = React.forwardRef(
+  ({ className, type = "text", ...props }, ref) => {
+    return (
+      <input
+        type={type}
+        className={clsx(
+          "flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm ring-offset-white placeholder:text-gray-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
+          className
+        )}
+        ref={ref}
+        {...props}
+      />
+    );
+  }
+);
+
+Input.displayName = "Input";
+
+export { Input };

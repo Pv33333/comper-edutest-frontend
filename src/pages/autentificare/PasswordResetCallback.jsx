@@ -1,90 +1,87 @@
+// src/pages/autentificare/PasswordResetCallback.jsx
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { supabase } from "@/lib/supabaseClient.js";
+import { useNavigate, Link } from "react-router-dom";
+import { supabase } from "@/lib/supabaseClient";
+import PasswordInput from "@/components/PasswordInput";
 
 export default function PasswordResetCallback() {
-  const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [errMsg, setErrMsg] = useState("");
-  const [okMsg, setOkMsg] = useState("");
   const navigate = useNavigate();
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [msg, setMsg] = useState({ ok: "", err: "" });
+  const [loading, setLoading] = useState(false);
 
-  const safeMsg = (e) => {
-    if (!e) return "Eroare necunoscută.";
-    if (typeof e === "string") return e;
-    if (e.message) return e.message;
-    try {
-      return JSON.stringify(e);
-    } catch {
-      return String(e);
-    }
-  };
-
-  const handleReset = async (e) => {
+  const handleUpdate = async (e) => {
     e.preventDefault();
-    setErrMsg("");
-    setOkMsg("");
+    setMsg({ ok: "", err: "" });
+
+    if (password.length < 6)
+      return setMsg({
+        err: "Parola trebuie să aibă minim 6 caractere.",
+        ok: "",
+      });
+    if (password !== confirm)
+      return setMsg({ err: "Parolele nu coincid.", ok: "" });
+
     try {
       setLoading(true);
       const { error } = await supabase.auth.updateUser({ password });
-      if (error) {
-        setErrMsg(safeMsg(error));
-        return;
-      }
-      setOkMsg("Parola a fost resetată.");
-      setTimeout(
-        () => navigate("/autentificare/login", { replace: true }),
-        800
-      );
+      if (error) throw error;
+
+      setMsg({ ok: "✅ Parola a fost resetată cu succes.", err: "" });
+      setTimeout(() => navigate("/autentificare/login"), 2000);
     } catch (err) {
-      setErrMsg(safeMsg(err));
+      setMsg({ ok: "", err: err.message });
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <main className="min-h-[70vh] flex items-center justify-center px-4">
-      <div className="bg-white rounded-2xl shadow-lg p-8 w-full max-w-md border border-gray-200">
-        <h1 className="text-2xl font-bold mb-6 text-center">
-          Setează o parolă nouă
+    <div className="min-h-[100dvh] flex items-center justify-center bg-[radial-gradient(1200px_600px_at_50%_-200px,rgba(79,70,229,0.08),transparent)] p-4">
+      <div className="rounded-3xl border border-indigo-100 bg-white/90 backdrop-blur p-6 shadow-xl max-w-md w-full">
+        <h1 className="text-2xl font-extrabold text-center text-indigo-900 mb-4">
+          🔒 Setează o parolă nouă
         </h1>
-
-        {errMsg && (
-          <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-red-700 text-sm">
-            {errMsg}
+        {msg.err && (
+          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-red-700 text-sm text-center">
+            {msg.err}
           </div>
         )}
-        {okMsg && (
-          <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-green-700 text-sm">
-            {okMsg}
+        {msg.ok && (
+          <div className="mb-4 rounded-xl border border-green-200 bg-green-50 px-3 py-2 text-green-700 text-sm text-center">
+            {msg.ok}
           </div>
         )}
-
-        <form onSubmit={handleReset} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium mb-1">
-              Parolă nouă
-            </label>
-            <input
-              type="password"
-              className="w-full rounded-md border border-gray-300 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              autoComplete="new-password"
-            />
-          </div>
-
+        <form onSubmit={handleUpdate} className="space-y-4">
+          <PasswordInput
+            label="Parola nouă"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            showStrength
+          />
+          <PasswordInput
+            label="Confirmă parola nouă"
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+          />
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-xl bg-blue-600 text-white font-medium py-2.5 hover:bg-blue-700 transition disabled:opacity-60"
+            className="rounded-xl px-4 py-2 w-full text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm disabled:opacity-60"
           >
-            {loading ? "Se actualizează..." : "Salvează parola"}
+            {loading ? "Se resetează…" : "Resetează parola"}
           </button>
         </form>
+        <div className="text-center mt-6">
+          <Link
+            className="text-indigo-700 hover:underline"
+            to="/autentificare/login"
+          >
+            ⟵ Înapoi la login
+          </Link>
+        </div>
       </div>
-    </main>
+    </div>
   );
 }

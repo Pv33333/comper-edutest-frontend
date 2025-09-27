@@ -47,7 +47,10 @@ export default function FormularScoala() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Județ
                 </label>
-                <select className="border border-gray-300 rounded-md p-2 w-full" required>
+                <select
+                  className="border border-gray-300 rounded-md p-2 w-full"
+                  required
+                >
                   <option value="">Selectează județul</option>
                   <option>București</option>
                   <option>Cluj</option>
@@ -60,7 +63,10 @@ export default function FormularScoala() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Localitate
                 </label>
-                <select className="border border-gray-300 rounded-md p-2 w-full" required>
+                <select
+                  className="border border-gray-300 rounded-md p-2 w-full"
+                  required
+                >
                   <option value="">Selectează localitatea</option>
                   <option>București</option>
                   <option>Cluj-Napoca</option>
