@@ -14,10 +14,9 @@ export default function Login() {
   const location = useLocation();
 
   const siteUrl =
-    import.meta.env.VITE_SITE_URL ||
-    (typeof window !== "undefined"
+    typeof window !== "undefined"
       ? window.location.origin
-      : "http://localhost:5173");
+      : "https://comper-edutest-frontend.vercel.app";
 
   useEffect(() => {
     const p = new URLSearchParams(location.search);
