@@ -14,9 +14,10 @@ export default function Login() {
   const location = useLocation();
 
   const siteUrl =
-    typeof window !== "undefined"
+    import.meta.env.VITE_SITE_URL ||
+    (typeof window !== "undefined"
       ? window.location.origin
-      : "https://comper-edutest-frontend.vercel.app";
+      : "http://localhost:5173");
 
   useEffect(() => {
     const p = new URLSearchParams(location.search);
@@ -118,15 +119,20 @@ export default function Login() {
     setInfoMsg("Se deschide Google…");
     try {
       const safeNext = getSafeNext();
-      const baseCallback = `${siteUrl}/autentificare/callback`;
-      const redirectTo = safeNext
-        ? `${baseCallback}?next=${encodeURIComponent(safeNext)}`
-        : baseCallback;
+
+      // ✅ Construim un URL absolut valid pentru orice mediu (local sau Vercel)
+      const callbackUrl = new URL(
+        "/autentificare/callback",
+        window.location.origin
+      );
+      if (safeNext) {
+        callbackUrl.searchParams.set("next", safeNext);
+      }
 
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo,
+          redirectTo: callbackUrl.toString(),
           queryParams: { access_type: "offline", prompt: "consent" },
         },
       });
