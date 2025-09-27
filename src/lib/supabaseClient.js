@@ -1,34 +1,43 @@
 // src/lib/supabaseClient.js
-console.log(
-  "DEBUG Supabase URL:",
-  JSON.stringify(import.meta.env.VITE_SUPABASE_URL)
-);
-console.log(
-  "DEBUG Supabase Key set:",
-  !!import.meta.env.VITE_SUPABASE_ANON_KEY
-);
 import { createClient } from "@supabase/supabase-js";
+
+// ========================
+//  DEBUG VARIABILE ENV
+// ========================
+console.group("[Supabase Debug]");
+console.log(
+  "VITE_SUPABASE_URL:",
+  import.meta.env.VITE_SUPABASE_URL || "(undefined)"
+);
+if (import.meta.env.VITE_SUPABASE_ANON_KEY) {
+  const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  console.log("VITE_SUPABASE_ANON_KEY prefix:", key.slice(0, 15));
+  console.log("VITE_SUPABASE_ANON_KEY length:", key.length);
+} else {
+  console.warn("VITE_SUPABASE_ANON_KEY is MISSING!");
+}
+console.groupEnd();
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-// Cheie de storage unică pentru proiectul tău (evită coliziuni între proiecte/tab-uri)
-const STORAGE_KEY = "comper_supabase_auth_v1";
+// ========================
+//  CREATE CLIENT
+// ========================
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    // PKCE flow for OAuth
+    flowType: "pkce",
+    detectSessionInUrl: true,
+    persistSession: true,
+    autoRefreshToken: true,
+    storageKey: "comper_supabase_auth_v1",
+  },
+});
 
-// Factory de client
-function makeClient() {
-  return createClient(supabaseUrl, supabaseAnonKey, {
-    auth: {
-      flowType: "pkce",
-      detectSessionInUrl: true,
-      persistSession: true,
-      autoRefreshToken: true,
-      storageKey: STORAGE_KEY,
-    },
-  });
+// Extra debug on client creation
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.error("[Supabase Debug] Client created with missing URL or Key!");
+} else {
+  console.info("[Supabase Debug] Supabase client created successfully.");
 }
-
-// HMR-safe singleton: o singură instanță în tot browser contextul (inclusiv cu Vite HMR)
-const g = globalThis;
-export const supabase =
-  g.__COMPER_SUPABASE__ ?? (g.__COMPER_SUPABASE__ = makeClient());
