@@ -4,27 +4,27 @@ import react from "@vitejs/plugin-react";
 import path from "path";
 
 export default defineConfig({
+  // 🔑 Setează baza explicit pentru build-urile Vercel
+  base: "/",
+
   plugins: [react()],
 
-  // Aliasuri convenabile (ex: import "@/components/...")
   resolve: {
+    // Alias pentru importuri mai scurte, ex: import Button from "@/components/Button"
     alias: {
       "@": path.resolve(__dirname, "./src"),
     },
   },
 
-  // Dev mai rapid: pre-bundle deps frecvente
+  // Optimizări pentru dezvoltare și build
   optimizeDeps: {
-    include: [
-      "chart.js/auto",
-    ],
+    include: ["chart.js/auto"],
   },
 
   build: {
     sourcemap: false,
     rollupOptions: {
       output: {
-        // Rupe pachetele grele în chunkuri dedicate (încărcate la nevoie)
         manualChunks: {
           chartjs: ["chart.js/auto"],
         },
@@ -32,7 +32,7 @@ export default defineConfig({
     },
   },
 
-  // SPA fallback (refresh pe rute non-root)
+  // Fallback pentru Single Page App (funcționează local)
   server: {
     historyApiFallback: true,
   },
