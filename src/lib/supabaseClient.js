@@ -1,16 +1,16 @@
 // src/lib/supabaseClient.js
+console.log(
+  "DEBUG Supabase URL:",
+  JSON.stringify(import.meta.env.VITE_SUPABASE_URL)
+);
+console.log(
+  "DEBUG Supabase Key set:",
+  !!import.meta.env.VITE_SUPABASE_ANON_KEY
+);
 import { createClient } from "@supabase/supabase-js";
 
-const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL || "").trim();
-const supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || "").trim();
-
-// Debug vizibil doar în consola Vercel (poți șterge după ce verifici)
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.error("❌ Supabase ENV lipsă sau invalidă:", {
-    supabaseUrl,
-    hasKey: !!supabaseAnonKey,
-  });
-}
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 // Cheie de storage unică pentru proiectul tău (evită coliziuni între proiecte/tab-uri)
 const STORAGE_KEY = "comper_supabase_auth_v1";
@@ -28,7 +28,7 @@ function makeClient() {
   });
 }
 
-// HMR-safe singleton
+// HMR-safe singleton: o singură instanță în tot browser contextul (inclusiv cu Vite HMR)
 const g = globalThis;
 export const supabase =
   g.__COMPER_SUPABASE__ ?? (g.__COMPER_SUPABASE__ = makeClient());
