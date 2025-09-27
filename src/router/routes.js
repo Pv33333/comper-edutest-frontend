@@ -76,9 +76,10 @@ const TesteComperProfesor = lazy(() =>
 const RezultateElevi = lazy(() =>
   import("@/pages/profesor/RezultateElevi.jsx")
 );
-const RapoarteTestare = lazy(() =>
-  import("@/pages/profesor/RapoarteTestare.jsx")
+const RapoarteProfesor = lazy(() =>
+  import("@/pages/profesor/RapoarteProfesor.jsx")
 );
+
 const RaportDetaliat = lazy(() =>
   import("@/pages/profesor/RaportDetaliat.jsx")
 );
@@ -268,7 +269,11 @@ export const routes = [
     meta: { layout: "site" },
   },
   { path: "/profesor/rezultate", el: RezultateElevi, meta: { layout: "site" } },
-  { path: "/profesor/rapoarte", el: RapoarteTestare, meta: { layout: "site" } },
+  {
+    path: "/profesor/rapoarte",
+    el: RapoarteProfesor,
+    meta: { layout: "site" },
+  },
   {
     path: "/profesor/raport-detaliat",
     el: RaportDetaliat,
